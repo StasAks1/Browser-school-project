@@ -1,0 +1,40 @@
+# Зависимости
+node_modules/
+
+# Сборка (electron-vite)
+out/
+dist/
+
+# Сборка (electron-builder)
+release/
+build/
+
+# Логи
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# JetBrains (если вдруг)
+.idea/
+
+# Переменные окружения
+.env
+.env.local
+.env.*.local
+
+# Временные файлы
+*.tmp
+*.swp
+*~
