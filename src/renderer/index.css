@@ -1,11 +1,201 @@
-body {
+* {
+  box-sizing: border-box;
   margin: 0;
-  font-family: -apple-system, sans-serif;
-  background: #1e1e1e;
-  color: #fff;
+  padding: 0;
+}
+
+:root {
+  --bg: #1a1a1a;
+  --bg-elevated: #252525;
+  --border: #333;
+  --text: #f0f0f0;
+  --text-muted: #888;
+  --accent: #de5833;      /* фирменный оранжевый DuckDuckGo */
+  --accent-hover: #c94a28;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+  user-select: none;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ---------- Верхняя панель ---------- */
+.top-bar {
+  padding: 20px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.duck {
+  font-size: 22px;
+}
+
+.logo-text {
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+
+/* ---------- Центральная часть ---------- */
+.search-area {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100vh;
+  padding: 0 24px 80px;
+  gap: 12px;
+}
+
+.greeting {
+  font-size: 42px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 16px;
+  margin-bottom: 28px;
+}
+
+/* ---------- Поисковая строка ---------- */
+.search-form {
+  width: 100%;
+  max-width: 620px;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 6px 6px 20px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.search-box:focus-within {
+  border-color: var(--accent);
+  background: #2a2a2a;
+}
+
+.search-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 16px;
+  padding: 12px 14px;
+  font-family: inherit;
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-btn {
+  background: var(--accent);
+  border: none;
+  border-radius: 999px;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+  flex-shrink: 0;
+}
+
+.search-btn:hover {
+  background: var(--accent-hover);
+}
+
+.search-btn:active {
+  transform: scale(0.95);
+}
+
+.search-btn svg {
+  width: 18px;
+  height: 18px;
+  color: #fff;
+}
+
+/* ---------- Быстрые ссылки ---------- */
+.shortcuts {
+  display: flex;
+  gap: 16px;
+  margin-top: 44px;
+}
+
+.shortcut {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 88px;
+  padding: 14px 8px;
+  border-radius: 14px;
+  text-decoration: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.shortcut:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.shortcut-icon {
+  width: 44px;
+  height: 44px;
+  background: var(--bg-elevated);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  transition: transform 0.15s ease;
+}
+
+.shortcut:hover .shortcut-icon {
+  transform: scale(1.06);
+}
+
+/* ---------- Футер ---------- */
+.footer {
+  padding: 16px 32px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  border-top: 1px solid var(--border);
 }
