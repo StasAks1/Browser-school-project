@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Новая вкладка</title>
+  <link rel="stylesheet" href="startpage.css">
+</head>
+<body>
+  <div class="page">
+    <main class="search-area">
+      <h1 class="greeting">Привет!</h1>
+      <p class="subtitle">Что будем искать сегодня?</p>
+
+      <form id="search-form" class="search-form">
+        <div class="search-box">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.35-4.35"></path>
+          </svg>
+          <input
+            type="text"
+            id="search-input"
+            class="search-input"
+            placeholder="Поиск в DuckDuckGo..."
+            autocomplete="off"
+            autofocus
+          >
+          <button type="submit" class="search-btn" aria-label="Искать">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12h14M12 5l7 7-7 7"></path>
+            </svg>
+          </button>
+        </div>
+        <div id="suggestions" class="suggestions"></div>
+      </form>
+
+      <div id="shortcuts" class="shortcuts"></div>
+    </main>
+
+    <footer class="footer">
+      <span>Browser Project · учебный проект 10 класса</span>
+    </footer>
+  </div>
+
+  <!-- Модалка добавления/редактирования ярлыка -->
+  <div id="add-modal" class="modal-overlay">
+    <div class="modal">
+      <h2 class="modal-title" id="modal-title">Новый ярлык</h2>
+      <form id="add-form" class="modal-form">
+        <label class="modal-label">
+          Название
+          <input type="text" id="add-title" class="modal-input" placeholder="GitHub" autocomplete="off" required>
+        </label>
+        <label class="modal-label">
+          Адрес
+          <input type="text" id="add-url" class="modal-input" placeholder="github.com" autocomplete="off" required>
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="add-cancel" class="btn btn-secondary">Отмена</button>
+          <button type="submit" class="btn btn-primary" id="modal-submit">Добавить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="startpage.js"></script>
+</body>
+</html>

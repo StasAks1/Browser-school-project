@@ -1,5 +1,5 @@
 {
-  "name": "Browswer-Project",
+  "name": "browser-project",
   "version": "1.0.0",
   "description": "Школьный проект по созданию браузера",
   "main": "out/main/index.js",
@@ -17,8 +17,6 @@
   "allowScripts": {
     "electron-winstaller@5.4.0": true,
     "esbuild@0.25.12": true,
-    "esbuild@0.28.2": true,
-    "fsevents@2.3.3": true,
-    "electron@44.4.5": true
+    "esbuild@0.28.2": true
   }
 }

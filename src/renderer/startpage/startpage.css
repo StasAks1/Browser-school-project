@@ -1,0 +1,435 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #1a1a1a;
+  --bg-elevated: #252525;
+  --bg-menu: #2a2a2a;
+  --border: #333;
+  --text: #f0f0f0;
+  --text-muted: #888;
+  --accent: #de5833;
+  --accent-hover: #c94a28;
+  --danger: #e5484d;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.search-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 24px 40px;
+  gap: 12px;
+}
+
+.greeting {
+  font-size: 42px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 16px;
+  margin-bottom: 28px;
+}
+
+.search-form {
+  width: 100%;
+  max-width: 620px;
+  position: relative;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 6px 6px 20px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.search-box:focus-within {
+  border-color: var(--accent);
+  background: #2a2a2a;
+}
+
+.search-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 16px;
+  padding: 12px 14px;
+  font-family: inherit;
+}
+
+.search-input::placeholder { color: var(--text-muted); }
+
+.search-btn {
+  background: var(--accent);
+  border: none;
+  border-radius: 999px;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+  flex-shrink: 0;
+}
+
+.search-btn:hover { background: var(--accent-hover); }
+.search-btn:active { transform: scale(0.95); }
+.search-btn svg { width: 18px; height: 18px; color: #fff; }
+
+/* ---------- Подсказки ---------- */
+.suggestions {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--bg-elevated);
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  z-index: 100;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.suggestions.visible { display: block; }
+
+.suggestion {
+  padding: 12px 20px;
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--text);
+  transition: background 0.1s ease;
+}
+
+.suggestion:hover,
+.suggestion.selected { background: #333; }
+
+/* ---------- Ярлыки ---------- */
+.shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 44px;
+  max-width: 640px;
+}
+
+.shortcut {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 90px;
+  padding: 12px 6px;
+  border-radius: 14px;
+  text-decoration: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.shortcut:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.shortcut-icon {
+  width: 48px;
+  height: 48px;
+  background: var(--bg-elevated);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  transition: transform 0.15s ease;
+  overflow: hidden;
+}
+
+.shortcut:hover .shortcut-icon {
+  transform: scale(1.06);
+}
+
+.shortcut-icon img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.shortcut-title {
+  width: 100%;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut.add-tile .shortcut-icon {
+  background: transparent;
+  border: 2px dashed var(--border);
+  font-size: 20px;
+  color: var(--text-muted);
+}
+
+.shortcut.add-tile:hover .shortcut-icon {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
+/* ---------- Кнопка с тремя точками ---------- */
+.tile-menu-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.12s ease, color 0.12s ease;
+  z-index: 2;
+}
+
+.shortcut:hover .tile-menu-btn {
+  opacity: 1;
+}
+
+.tile-menu-btn:hover {
+  background: #333;
+  color: var(--text);
+}
+
+.tile-menu-btn.active {
+  opacity: 1;
+  background: #3a3a3a;
+  color: var(--text);
+}
+
+.tile-menu-btn svg {
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+/* ---------- Выпадающее меню плитки ---------- */
+.tile-dropdown {
+  position: fixed;
+  z-index: 2000;
+  min-width: 180px;
+  padding: 5px;
+  background: var(--bg-menu);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  box-shadow:
+    0 10px 32px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(0, 0, 0, 0.4);
+  animation: dropdownIn 0.12s ease-out;
+}
+
+@keyframes dropdownIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.tile-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.08s ease;
+}
+
+.tile-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tile-dropdown-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.tile-dropdown-item.danger {
+  color: var(--danger);
+}
+
+.tile-dropdown-item.danger:hover {
+  background: rgba(229, 72, 77, 0.15);
+}
+
+.tile-dropdown-item.danger svg {
+  opacity: 1;
+}
+
+.tile-dropdown-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ---------- Модальное окно ---------- */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 3000;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay.visible { display: flex; }
+
+.modal {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  width: 380px;
+  max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modal-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.modal-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.modal-input:focus {
+  border-color: var(--accent);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.btn {
+  padding: 9px 18px;
+  border-radius: 10px;
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.btn:active { transform: scale(0.96); }
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover { background: var(--accent-hover); }
+
+/* ---------- Футер ---------- */
+.footer {
+  padding: 16px 32px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+}

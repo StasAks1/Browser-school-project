@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Закладки</title>
+  <link rel="stylesheet" href="bookmarks.css">
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <h1 class="title">Закладки</h1>
+      <div class="search-wrapper">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input type="text" id="search-input" class="search-input" placeholder="Поиск по названию или адресу..." autocomplete="off">
+      </div>
+    </header>
+
+    <main class="content" id="content"></main>
+  </div>
+
+  <script src="bookmarks.js"></script>
+</body>
+</html>
