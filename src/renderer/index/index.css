@@ -1,9 +1,13 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-:root {
+/* ============ Тёмная тема (по умолчанию) ============ */
+:root,
+[data-theme="dark"] {
   --bg: #1a1a1a;
-  --bg-tab-active: #252525;
+  --bg-elevated: #252525;
   --bg-hover: #222;
+  --bg-active: #2f2f2f;
+  --bg-tab-active: #252525;
   --text: #f0f0f0;
   --text-muted: #888;
   --accent: #de5833;
@@ -13,10 +17,27 @@
   --danger: #e5484d;
 }
 
+/* ============ Светлая тема ============ */
+[data-theme="light"] {
+  --bg: #ececec;
+  --bg-elevated: #ffffff;
+  --bg-hover: #e0e0e0;
+  --bg-active: #d8d8d8;
+  --bg-tab-active: #ffffff;
+  --text: #1a1a1a;
+  --text-muted: #6b6b6b;
+  --accent: #de5833;
+  --accent-hover: #c94a28;
+  --star: #f5a623;
+  --border: #d0d0d0;
+  --danger: #e5484d;
+}
+
 html, body {
   height: 100vh;
   overflow: hidden;
-  background: #1a1a1a;
+  background: var(--bg);
+  color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   user-select: none;
   -webkit-font-smoothing: antialiased;
@@ -26,189 +47,136 @@ html, body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #1a1a1a;
+  background: var(--bg);
   -webkit-app-region: drag;
 }
 
-/* ==================== Панель вкладок ==================== */
+/* ============ Панель вкладок ============ */
 .tab-strip {
-  display: flex;
-  align-items: center;
-  height: 44px;
-  padding: 8px 8px 8px 92px;
-  gap: 4px;
-  -webkit-app-region: drag;
-  flex-shrink: 0;
+  display: flex; align-items: center;
+  height: 44px; padding: 8px 8px 8px 92px; gap: 4px;
+  -webkit-app-region: drag; flex-shrink: 0;
 }
 
 .tabs-container {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 1 auto;
-  height: 28px;
-  overflow: hidden;
-  -webkit-app-region: no-drag;
-  max-width: calc(100% - 40px);
+  display: flex; align-items: center; gap: 6px;
+  flex: 0 1 auto; height: 28px; overflow: hidden;
+  -webkit-app-region: no-drag; max-width: calc(100% - 40px);
 }
 
 .tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 6px 0 10px;
-  min-width: 60px;
-  max-width: 200px;
-  flex: 0 1 auto;
-  background: transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text-muted);
-  position: relative;
-  overflow: hidden;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease,
-    opacity 0.2s ease,
-    transform 0.2s ease,
-    min-width 0.2s ease,
-    max-width 0.2s ease,
-    padding 0.2s ease,
-    margin 0.2s ease;
+  display: flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 6px 0 10px;
+  min-width: 60px; max-width: 200px; flex: 0 1 auto;
+  background: transparent; border-radius: 8px; cursor: pointer;
+  font-size: 12px; color: var(--text-muted);
+  position: relative; overflow: hidden;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.2s ease,
+              transform 0.2s ease, min-width 0.2s ease, max-width 0.2s ease,
+              padding 0.2s ease, margin 0.2s ease;
 }
-
-.tab:hover { background: #222; color: #ccc; }
+.tab:hover { background: var(--bg-hover); color: var(--text); }
 .tab.active { background: var(--bg-tab-active); color: var(--text); }
-
-.tab.entering,
-.tab.closing {
-  opacity: 0;
-  transform: scale(0.85);
-  min-width: 0;
-  max-width: 0;
-  padding-left: 0;
-  padding-right: 0;
-  margin-right: -6px;
-  pointer-events: none;
+.tab.entering, .tab.closing {
+  opacity: 0; transform: scale(0.85);
+  min-width: 0; max-width: 0; padding-left: 0; padding-right: 0;
+  margin-right: -6px; pointer-events: none;
 }
 
 .tab-favicon {
-  width: 14px; height: 14px;
-  display: flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; display: flex;
+  align-items: center; justify-content: center;
   flex-shrink: 0; overflow: hidden; border-radius: 3px;
 }
 .tab-favicon img { width: 14px; height: 14px; object-fit: contain; }
 .tab-favicon span {
   font-size: 10px; font-weight: 600; color: var(--text-muted);
-  background: #333; border-radius: 3px;
+  background: var(--bg-active); border-radius: 3px;
   width: 14px; height: 14px;
   display: flex; align-items: center; justify-content: center;
 }
 .tab-title {
-  flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
 }
 .tab-close {
-  width: 18px; height: 18px;
-  border: none; border-radius: 4px;
-  background: transparent; color: inherit;
-  cursor: pointer;
+  width: 18px; height: 18px; border: none; border-radius: 4px;
+  background: transparent; color: inherit; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; opacity: 0;
   transition: opacity 0.12s ease, background 0.12s ease;
 }
-.tab:hover .tab-close,
-.tab.active .tab-close { opacity: 0.7; }
-.tab-close:hover { opacity: 1 !important; background: rgba(255, 255, 255, 0.12); }
+.tab:hover .tab-close, .tab.active .tab-close { opacity: 0.7; }
+.tab-close:hover { opacity: 1 !important; background: rgba(128, 128, 128, 0.25); }
 .tab-close svg { width: 10px; height: 10px; pointer-events: none; }
 
 .new-tab-btn {
-  width: 28px; height: 28px;
-  border: none; border-radius: 8px;
+  width: 28px; height: 28px; border: none; border-radius: 8px;
   background: transparent; color: var(--text-muted);
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  transition: background 0.12s ease, color 0.12s ease;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: background 0.12s ease, color 0.12s ease;
   -webkit-app-region: no-drag;
 }
-.new-tab-btn:hover { background: #252525; color: var(--text); }
-.new-tab-btn:active { background: #2f2f2f; }
+.new-tab-btn:hover { background: var(--bg-hover); color: var(--text); }
+.new-tab-btn:active { background: var(--bg-active); }
 .new-tab-btn svg { width: 14px; height: 14px; }
 
-/* ==================== Панель навигации ==================== */
+/* ============ Навигация ============ */
 .nav-bar {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  height: 36px;
-  padding: 0 14px 8px 14px;
-  -webkit-app-region: drag;
-  flex-shrink: 0;
+  display: flex; align-items: flex-start; gap: 10px;
+  height: 36px; padding: 0 14px 8px 14px;
+  -webkit-app-region: drag; flex-shrink: 0;
 }
 
 .nav-group {
   display: flex; align-items: center;
   height: 28px; padding: 0 2px;
-  border-radius: 999px;
-  -webkit-app-region: no-drag;
-  background: #252525;
-  transition: background 0.25s ease;
+  border-radius: 999px; -webkit-app-region: no-drag;
+  background: var(--bg-elevated); transition: background 0.25s ease;
 }
-body.scrolled .nav-group { background: #242424; }
+body.scrolled .nav-group { background: var(--bg-hover); }
 
 .nav-btn {
-  width: 36px; height: 24px;
-  border: none; background: transparent;
+  width: 36px; height: 24px; border: none; background: transparent;
   color: var(--text); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 999px;
-  transition: background 0.12s ease;
+  border-radius: 999px; transition: background 0.12s ease;
 }
-.nav-btn:hover { background: rgba(255, 255, 255, 0.1); }
-.nav-btn:active { background: rgba(255, 255, 255, 0.18); }
+.nav-btn:hover { background: rgba(128, 128, 128, 0.15); }
+.nav-btn:active { background: rgba(128, 128, 128, 0.25); }
 .nav-btn:disabled { color: var(--text-muted); opacity: 0.4; cursor: default; }
 .nav-btn:disabled:hover { background: transparent; }
 .nav-btn svg { width: 14px; height: 14px; }
 
 .nav-divider {
   width: 1px; height: 12px;
-  background: rgba(255, 255, 255, 0.1);
-  flex-shrink: 0;
+  background: rgba(128, 128, 128, 0.25); flex-shrink: 0;
 }
 
 .address-form { flex: 1; -webkit-app-region: no-drag; }
 
 .address-wrapper {
-  display: flex; align-items: center;
-  gap: 8px;
+  display: flex; align-items: center; gap: 8px;
   height: 28px; padding: 0 6px 0 14px;
-  border-radius: 999px;
-  background: #252525;
-  border: 1px solid transparent;
-  position: relative;
+  border-radius: 999px; background: var(--bg-elevated);
+  border: 1px solid transparent; position: relative;
   transition: background 0.25s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
-body.scrolled .address-wrapper { background: #242424; }
+body.scrolled .address-wrapper { background: var(--bg-hover); }
 .address-wrapper:focus-within {
-  background: #2a2a2a;
-  border-color: rgba(222, 88, 51, 0.55);
-  box-shadow: 0 0 0 3px rgba(222, 88, 51, 0.15);
+  background: var(--bg-elevated);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(128, 128, 128, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .loading-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  opacity: 0;
-  transition: opacity 0.2s ease;
-  flex-shrink: 0;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); opacity: 0;
+  transition: opacity 0.2s ease; flex-shrink: 0;
 }
 body.loading .loading-dot {
-  opacity: 1;
-  animation: pulse 1s ease-in-out infinite;
+  opacity: 1; animation: pulse 1s ease-in-out infinite;
 }
 @keyframes pulse {
   0%, 100% { transform: scale(1); opacity: 0.5; }
@@ -216,26 +184,20 @@ body.loading .loading-dot {
 }
 
 .address-input {
-  flex: 1;
-  background: transparent;
-  border: none; outline: none;
-  color: var(--text);
-  font-size: 13px; font-family: inherit;
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--text); font-size: 13px; font-family: inherit;
 }
 .address-input::placeholder { color: var(--text-muted); }
 
 .star-btn {
-  width: 26px; height: 26px;
-  padding: 0;
-  border: none; border-radius: 50%;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
+  width: 26px; height: 26px; padding: 0;
+  border: none; border-radius: 50%; background: transparent;
+  color: var(--text-muted); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
   transition: background 0.12s ease, color 0.12s ease, transform 0.1s ease;
 }
-.star-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+.star-btn:hover { background: rgba(128, 128, 128, 0.15); color: var(--text); }
 .star-btn:active { transform: scale(0.92); }
 .star-btn svg { width: 15px; height: 15px; pointer-events: none; }
 .star-btn .star-filled { display: none; }
@@ -244,151 +206,90 @@ body.loading .loading-dot {
 .star-btn.bookmarked { color: var(--star); }
 
 .circle-btn {
-  width: 28px; height: 28px;
-  border: none; border-radius: 50%;
-  background: #252525;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  -webkit-app-region: no-drag;
+  width: 28px; height: 28px; border: none; border-radius: 50%;
+  background: var(--bg-elevated); color: var(--text-muted);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; -webkit-app-region: no-drag;
   transition: background 0.25s ease, color 0.15s ease, transform 0.1s ease;
 }
-body.scrolled .circle-btn { background: #242424; }
-.circle-btn:hover { background: #333; color: var(--text); }
+body.scrolled .circle-btn { background: var(--bg-hover); }
+.circle-btn:hover { background: var(--bg-active); color: var(--text); }
 .circle-btn:active { transform: scale(0.92); }
 .circle-btn svg { width: 14px; height: 14px; }
 
-/* ==================== Панель закладок ==================== */
+/* ============ Панель закладок ============ */
 .bookmarks-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 32px;
-  padding: 0 8px;
-  -webkit-app-region: drag;
-  overflow: hidden;
-  flex-shrink: 0;
-  gap: 6px;
-  transition:
-    height 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  display: flex; align-items: center; justify-content: center;
+  height: 32px; padding: 0 8px;
+  -webkit-app-region: drag; overflow: hidden;
+  flex-shrink: 0; gap: 6px;
+  transition: height 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   opacity: 1;
 }
-
 body:not(.has-bookmarks) .bookmarks-bar {
-  height: 0;
-  opacity: 0;
-  pointer-events: none;
+  height: 0; opacity: 0; pointer-events: none;
 }
 
 .bookmarks-inner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 0 6px;
-  max-width: 100%;
-  height: 32px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  -webkit-app-region: no-drag;
+  display: flex; align-items: center; justify-content: center;
+  gap: 4px; padding: 0 6px; max-width: 100%; height: 32px;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  -ms-overflow-style: none; -webkit-app-region: no-drag;
   transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
-
-body:not(.has-bookmarks) .bookmarks-inner {
-  transform: translateY(-8px);
-}
-
+body:not(.has-bookmarks) .bookmarks-inner { transform: translateY(-8px); }
 .bookmarks-inner::-webkit-scrollbar { display: none; }
 
 .bookmarks-manager-btn {
-  width: 26px; height: 26px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  -webkit-app-region: no-drag;
+  width: 26px; height: 26px; border: none; border-radius: 6px;
+  background: transparent; color: var(--text-muted);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; -webkit-app-region: no-drag;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.bookmarks-manager-btn:hover {
-  background: #252525;
-  color: var(--text);
-}
+.bookmarks-manager-btn:hover { background: var(--bg-elevated); color: var(--text); }
 .bookmarks-manager-btn svg { width: 14px; height: 14px; }
-
-body:not(.has-bookmarks) .bookmarks-manager-btn {
-  display: none;
-}
+body:not(.has-bookmarks) .bookmarks-manager-btn { display: none; }
 
 .bookmark-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  color: var(--text-muted);
-  font-size: 12px;
-  flex-shrink: 0;
-  max-width: 180px;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease,
-    opacity 0.2s ease,
-    transform 0.2s ease,
-    min-width 0.2s ease,
-    max-width 0.2s ease,
-    padding 0.2s ease,
-    margin 0.2s ease;
-  user-select: none;
-  overflow: hidden;
+  display: flex; align-items: center; gap: 6px;
+  height: 24px; padding: 0 10px; border-radius: 6px;
+  cursor: pointer; color: var(--text-muted); font-size: 12px;
+  flex-shrink: 0; max-width: 180px;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.2s ease,
+              transform 0.2s ease, min-width 0.2s ease, max-width 0.2s ease,
+              padding 0.2s ease, margin 0.2s ease;
+  user-select: none; overflow: hidden;
 }
-
-.bookmark-item:hover {
-  background: #252525;
-  color: var(--text);
-}
-.bookmark-item:active { background: #2f2f2f; }
-
-.bookmark-item.entering,
-.bookmark-item.closing {
-  opacity: 0;
-  transform: scale(0.85);
-  min-width: 0;
-  max-width: 0;
-  padding-left: 0;
-  padding-right: 0;
-  margin-right: -4px;
-  pointer-events: none;
+.bookmark-item:hover { background: var(--bg-elevated); color: var(--text); }
+.bookmark-item:active { background: var(--bg-active); }
+.bookmark-item.entering, .bookmark-item.closing {
+  opacity: 0; transform: scale(0.85);
+  min-width: 0; max-width: 0; padding-left: 0; padding-right: 0;
+  margin-right: -4px; pointer-events: none;
 }
 
 .bookmark-favicon {
-  width: 14px; height: 14px;
-  flex-shrink: 0;
-  border-radius: 3px;
+  width: 14px; height: 14px; flex-shrink: 0; border-radius: 3px;
   display: flex; align-items: center; justify-content: center;
-  overflow: hidden;
-  background: #333;
+  overflow: hidden; background: var(--bg-active);
 }
 .bookmark-favicon img { width: 14px; height: 14px; object-fit: contain; }
 .bookmark-favicon span {
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--text-muted);
+  font-size: 9px; font-weight: 700; color: var(--text-muted);
   width: 14px; height: 14px;
   display: flex; align-items: center; justify-content: center;
 }
+.bookmark-favicon.folder-icon {
+  background: transparent;
+  color: var(--text-muted);
+}
+.bookmark-favicon.folder-icon svg { width: 14px; height: 14px; }
+
+.bookmark-folder:hover .bookmark-favicon.folder-icon { color: var(--accent); }
 
 .bookmark-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   max-width: 140px;
 }

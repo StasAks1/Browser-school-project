@@ -20,7 +20,10 @@ export default defineConfig({
           index: resolve(__dirname, 'src/renderer/index/index.html'),
           startpage: resolve(__dirname, 'src/renderer/startpage/startpage.html'),
           bookmarks: resolve(__dirname, 'src/renderer/bookmarks/bookmarks.html'),
-          popup: resolve(__dirname, 'src/renderer/popup/popup.html')
+          history: resolve(__dirname, 'src/renderer/history/history.html'),
+          popup: resolve(__dirname, 'src/renderer/popup/popup.html'),
+          permission: resolve(__dirname, 'src/renderer/permission/permission.html'),
+          settings: resolve(__dirname, 'src/renderer/settings/settings.html')
         }
       }
     }

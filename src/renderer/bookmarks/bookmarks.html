@@ -2,23 +2,97 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('browser-resolved-theme');
+        document.documentElement.dataset.theme = (t === 'light') ? 'light' : 'dark';
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    })();
+  </script>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'none';">
   <title>Закладки</title>
   <link rel="stylesheet" href="bookmarks.css">
 </head>
 <body>
   <div class="page">
     <header class="header">
-      <h1 class="title">Закладки</h1>
-      <div class="search-wrapper">
-        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8"/>
-          <path d="m21 21-4.35-4.35"/>
-        </svg>
-        <input type="text" id="search-input" class="search-input" placeholder="Поиск по названию или адресу..." autocomplete="off">
+      <div class="header-top">
+        <h1 class="title">Закладки</h1>
+        <div class="search-wrapper">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input type="text" id="search-input" class="search-input" placeholder="Поиск по названию или адресу..." autocomplete="off">
+        </div>
       </div>
     </header>
 
-    <main class="content" id="content"></main>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav class="sidebar-nav" id="sidebar-nav"></nav>
+        <button class="new-folder-btn" id="btn-new-folder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+          <span>Новая папка</span>
+        </button>
+      </aside>
+
+      <main class="content" id="content"></main>
+    </div>
+  </div>
+
+  <!-- Модалка редактирования закладки -->
+  <div id="edit-modal" class="modal-overlay">
+    <div class="modal">
+      <h2 class="modal-title">Редактировать закладку</h2>
+      <form id="edit-form" class="modal-form">
+        <label class="modal-label">
+          Название
+          <input type="text" id="edit-title" class="modal-input" autocomplete="off" required>
+        </label>
+        <label class="modal-label">
+          Адрес
+          <input type="text" id="edit-url" class="modal-input" autocomplete="off" required>
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="edit-cancel" class="btn btn-secondary">Отмена</button>
+          <button type="submit" class="btn btn-primary">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Модалка создания/переименования папки -->
+  <div id="folder-modal" class="modal-overlay">
+    <div class="modal">
+      <h2 class="modal-title" id="folder-modal-title">Новая папка</h2>
+      <form id="folder-form" class="modal-form">
+        <label class="modal-label">
+          Название папки
+          <input type="text" id="folder-name" class="modal-input" autocomplete="off" required>
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="folder-cancel" class="btn btn-secondary">Отмена</button>
+          <button type="submit" id="folder-submit" class="btn btn-primary">Создать</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Модалка перемещения закладки -->
+  <div id="move-modal" class="modal-overlay">
+    <div class="modal">
+      <h2 class="modal-title">Переместить в папку</h2>
+      <div class="move-list" id="move-list"></div>
+      <div class="modal-actions">
+        <button type="button" id="move-cancel" class="btn btn-secondary">Отмена</button>
+      </div>
+    </div>
   </div>
 
   <script src="bookmarks.js"></script>

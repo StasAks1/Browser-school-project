@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('browser-resolved-theme');
+        document.documentElement.dataset.theme = (t === 'light') ? 'light' : 'dark';
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    })();
+  </script>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'none';">
+  <title>Разрешение</title>
+  <link rel="stylesheet" href="permission.css">
+</head>
+<body>
+  <div class="popup">
+    <div class="icon-wrap">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    </div>
+    <div class="title">Запрос доступа</div>
+    <div class="domain" id="domain">example.com</div>
+    <div class="message">
+      хочет получить доступ к <strong id="perm-label">камере</strong>
+    </div>
+    <div class="actions">
+      <button id="btn-deny" class="btn btn-secondary">Запретить</button>
+      <button id="btn-allow" class="btn btn-primary">Разрешить</button>
+    </div>
+  </div>
+  <script src="permission.js"></script>
+</body>
+</html>

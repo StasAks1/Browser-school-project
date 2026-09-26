@@ -1,5 +1,30 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+:root,
+[data-theme="dark"] {
+  --popup-bg: #2a2a2a;
+  --popup-border: rgba(255, 255, 255, 0.08);
+  --input-bg: #1a1a1a;
+  --input-border: #333;
+  --text: #f0f0f0;
+  --text-muted: #888;
+  --accent: #de5833;
+  --accent-hover: #c94a28;
+  --danger: #e5484d;
+}
+
+[data-theme="light"] {
+  --popup-bg: #ffffff;
+  --popup-border: #dcdcdc;
+  --input-bg: #f5f5f7;
+  --input-border: #dcdcdc;
+  --text: #1a1a1a;
+  --text-muted: #6b6b6b;
+  --accent: #de5833;
+  --accent-hover: #c94a28;
+  --danger: #e5484d;
+}
+
 html, body {
   width: 100%;
   height: 100%;
@@ -14,12 +39,12 @@ html, body {
   width: 100%;
   height: 100%;
   padding: 12px;
-  background: #2a2a2a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border);
   border-radius: 12px;
   box-shadow:
-    0 20px 40px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(0, 0, 0, 0.4);
+    0 20px 40px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(0, 0, 0, 0.2);
   display: flex;
   flex-direction: column;
   animation: popupIn 0.14s ease-out;
@@ -34,7 +59,7 @@ html, body {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #888;
+  color: var(--text-muted);
   margin-bottom: 8px;
   font-weight: 600;
 }
@@ -42,16 +67,16 @@ html, body {
 .popup-input {
   width: 100%;
   padding: 8px 12px;
-  background: #1a1a1a;
-  border: 1px solid #333;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: 8px;
-  color: #f0f0f0;
+  color: var(--text);
   font-size: 13px;
   font-family: inherit;
   outline: none;
   transition: border-color 0.15s ease;
 }
-.popup-input:focus { border-color: #de5833; }
+.popup-input:focus { border-color: var(--accent); }
 
 .popup-actions {
   display: flex;
@@ -75,14 +100,14 @@ html, body {
 .popup-btn:active { transform: scale(0.96); }
 
 .popup-btn-primary {
-  background: #de5833;
+  background: var(--accent);
   color: #fff;
   margin-left: auto;
 }
-.popup-btn-primary:hover { background: #c94a28; }
+.popup-btn-primary:hover { background: var(--accent-hover); }
 
 .popup-btn-danger {
   background: transparent;
-  color: #e5484d;
+  color: var(--danger);
 }
 .popup-btn-danger:hover { background: rgba(229, 72, 77, 0.15); }
