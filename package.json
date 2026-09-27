@@ -11,18 +11,97 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "start": "electron-vite preview"
+    "start": "electron-vite preview",
+    "dist": "electron-vite build && electron-builder",
+    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:linux": "electron-vite build && electron-builder --linux"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0"
   },
   "devDependencies": {
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0"
   },
+  "build": {
+    "appId": "com.stasaks1.browserproject",
+    "productName": "Browser Project",
+    "copyright": "Copyright © 2026 StasAks1",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "!out/**/*.map",
+      "!**/*.md",
+      "!**/*.txt",
+      "!**/node_modules/**/{test,__tests__,tests,powered-test,example,examples}/**"
+    ],
+    "asar": true,
+    "compression": "maximum",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64", "x64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["arm64", "x64"]
+        }
+      ],
+      "darkModeSupport": true,
+      "extendInfo": {
+        "NSCameraUsageDescription": "Разрешить доступ к камере для видеозвонков",
+        "NSMicrophoneUsageDescription": "Разрешить доступ к микрофону для аудиозвонков",
+        "NSLocationWhenInUseUsageDescription": "Разрешить доступ к геолокации"
+      }
+    },
+    "dmg": {
+      "title": "Browser Project ${version}",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Browser Project",
+      "uninstallDisplayName": "Browser Project",
+      "deleteAppDataOnUninstall": false
+    },
+    "linux": {
+      "icon": "build/icons",
+      "category": "Network",
+      "synopsis": "Кроссплатформенный браузер",
+      "description": "Учебный проект — браузер на Electron",
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
+      ],
+      "desktop": {
+        "StartupWMClass": "Browser Project"
+      }
+    }
+  },
   "allowScripts": {
     "esbuild@0.25.12": true,
     "esbuild@0.28.2": true
-  },
-  "dependencies": {
-    "@mozilla/readability": "^0.6.0"
   }
 }
