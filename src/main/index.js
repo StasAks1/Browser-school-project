@@ -7,8 +7,11 @@ import { matchShortcut } from './shortcuts.js'
 import { saveSession, loadSession, clearSession, isRestorableUrl } from './session.js'
 import { generateBookmarksHTML, parseBookmarksHTML } from './bookmarks-io.js'
 import { isPopupRequest, buildPopupWindowOptions, attachPopupHandlers } from './popup.js'
-import { showTabContextMenu } from './context-menu.js'
 import { setupApplicationMenu } from './menu.js'
+import { showTabContextMenu } from './context-menu.js'
+import { getPrivateSession, clearPrivateData, PRIVATE_BG_COLOR } from './private.js'
+import { extractArticle } from './reader.js'
+import { attachTrackerBlocker, getStats as getTrackerStats, resetStats as resetTrackerStats } from './tracker-blocker.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -28,6 +31,7 @@ const INTERNAL_HISTORY = 'internal://history'
 const INTERNAL_SETTINGS = 'internal://settings'
 const INTERNAL_DOWNLOADS = 'internal://downloads'
 const INTERNAL_COOKIES = 'internal://cookies'
+const INTERNAL_READER = 'internal://reader'
 
 const POPUP_WIDTH = 300
 const POPUP_HEIGHT = 165
@@ -72,6 +76,7 @@ let settingsCache = {
   downloadPath: '',
   askWhereToSave: false,
   restoreSession: true,
+  blockTrackers: true,
 }
 
 const activeDownloads = new Map()
@@ -291,18 +296,11 @@ function setupSecurity() {
     return false
   })
 
-  ses.webRequest.onBeforeRequest((details, callback) => {
-    try {
-      const url = new URL(details.url)
-      if (url.protocol === 'data:' && details.resourceType === 'mainFrame') {
-        callback({ cancel: true }); return
-      }
-    } catch {}
-    callback({})
-  })
-
   attachNetworkLogger(ses)
   attachDownloadHandlerToSession(ses)
+
+  // Блокировка трекеров и рекламы (обычная сессия)
+  attachTrackerBlocker(ses, () => !!settingsCache.blockTrackers)
 }
 
 function attachTabSecurityHandlers(tab) {
@@ -412,6 +410,7 @@ function isTrustedInternalUrl(url) {
     url.includes('settings/settings.html') ||
     url.includes('downloads/downloads.html') ||
     url.includes('cookies/cookies.html') ||
+    url.includes('reader/reader.html') ||
     url.includes('statusbar/statusbar.html') ||
     url.includes('error/error.html') ||
     url.includes('warning/warning.html') ||
@@ -451,6 +450,10 @@ function getDownloadsPageUrl() {
 function getCookiesPagePath() { return path.join(__dirname, '../renderer/cookies/cookies.html') }
 function getCookiesPageUrl() {
   return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/cookies/cookies.html` : null
+}
+function getReaderPagePath() { return path.join(__dirname, '../renderer/reader/reader.html') }
+function getReaderPageUrl() {
+  return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/reader/reader.html` : null
 }
 function getStatusBarPath() { return path.join(__dirname, '../renderer/statusbar/statusbar.html') }
 function getStatusBarUrl() {
@@ -492,14 +495,29 @@ function loadSettings() {
         downloadPath: typeof data.downloadPath === 'string' ? data.downloadPath : '',
         askWhereToSave: !!data.askWhereToSave,
         restoreSession: data.restoreSession !== false,
+        blockTrackers: data.blockTrackers !== false,
       }
     } else {
-      settingsCache = { theme: 'dark', accent: ACCENT_DEFAULT, downloadPath: '', askWhereToSave: false, restoreSession: true }
+      settingsCache = {
+        theme: 'dark',
+        accent: ACCENT_DEFAULT,
+        downloadPath: '',
+        askWhereToSave: false,
+        restoreSession: true,
+        blockTrackers: true,
+      }
       saveSettings()
     }
   } catch (err) {
     console.error('Failed to load settings:', err)
-    settingsCache = { theme: 'dark', accent: ACCENT_DEFAULT, downloadPath: '', askWhereToSave: false, restoreSession: true }
+    settingsCache = {
+      theme: 'dark',
+      accent: ACCENT_DEFAULT,
+      downloadPath: '',
+      askWhereToSave: false,
+      restoreSession: true,
+      blockTrackers: true,
+    }
   }
 }
 
@@ -540,7 +558,9 @@ function applyBackgroundColors() {
   if (chromeView && !chromeView.webContents.isDestroyed()) chromeView.setBackgroundColor(color)
   for (const tab of tabs) {
     if (tab.isUnloaded) continue
-    if (tab.view && !tab.view.webContents.isDestroyed()) tab.view.setBackgroundColor(color)
+    if (tab.view && !tab.view.webContents.isDestroyed()) {
+      tab.view.setBackgroundColor(tab.isPrivate ? PRIVATE_BG_COLOR : color)
+    }
   }
 }
 
@@ -825,12 +845,13 @@ function isHistoryPageUrl(url) { if (!url) return false; return url.includes('hi
 function isSettingsPageUrl(url) { if (!url) return false; return url.includes('settings/settings.html') }
 function isDownloadsPageUrl(url) { if (!url) return false; return url.includes('downloads/downloads.html') }
 function isCookiesPageUrl(url) { if (!url) return false; return url.includes('cookies/cookies.html') }
+function isReaderPageUrl(url) { if (!url) return false; return url.includes('reader/reader.html') }
 function isErrorPageUrl(url) { if (!url) return false; return url.includes('error/error.html') }
 function isWarningPageUrl(url) { if (!url) return false; return url.includes('warning/warning.html') }
 function isInternalUrl(url) {
   return isStartpageUrl(url) || isBookmarksPageUrl(url) || isHistoryPageUrl(url) ||
          isSettingsPageUrl(url) || isDownloadsPageUrl(url) || isCookiesPageUrl(url) ||
-         isErrorPageUrl(url) || isWarningPageUrl(url)
+         isReaderPageUrl(url) || isErrorPageUrl(url) || isWarningPageUrl(url)
 }
 
 function serializeTabs() {
@@ -842,7 +863,22 @@ function serializeTabs() {
     isLoading: t.isUnloaded ? false : !!t.isLoading,
     isActive: t.id === activeTabId,
     isUnloaded: !!t.isUnloaded,
+    isPrivate: !!t.isPrivate,
+    isReader: !!t.isReaderMode,
+    canRead: tabCanRead(t),
   }))
+}
+
+function tabCanRead(tab) {
+  if (!tab) return false
+  if (tab.isReaderMode) return true
+  if (tab.isUnloaded) return false
+  if (!tab.view || tab.view.webContents.isDestroyed()) return false
+  const url = getTabUrl(tab)
+  if (!url) return false
+  if (isInternalUrl(url)) return false
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return false
+  return true
 }
 
 function sendTabsUpdate() {
@@ -883,6 +919,7 @@ function getRestorableTabsWithActive() {
   const list = []
   let activeIdx = -1
   for (const tab of tabs) {
+    if (tab.isPrivate) continue
     const url = getTabUrl(tab)
     if (!isRestorableUrl(url)) continue
     if (tab.id === activeTabId) activeIdx = list.length
@@ -961,6 +998,81 @@ function restoreSessionIntoTabs() {
   switchTab(createdIds[targetIdx])
   enforceTabLimit()
   debugLog('Session', `Восстановлено вкладок: ${createdIds.length}, активна #${targetIdx + 1}`)
+}
+
+// ============================================================
+// ============ READER MODE ===================================
+// ============================================================
+async function toggleReaderMode() {
+  const tab = getActiveTab()
+  if (!tab) return { ok: false, error: 'Нет активной вкладки' }
+
+  if (tab.isReaderMode) {
+    exitReaderMode(tab)
+    return { ok: true, exited: true }
+  }
+
+  if (tab.isUnloaded) recreateTab(tab)
+  if (!tab.view || tab.view.webContents.isDestroyed()) {
+    return { ok: false, error: 'Вкладка не загружена' }
+  }
+
+  const wc = tab.view.webContents
+  let url = ''
+  try { url = wc.getURL() } catch {}
+
+  if (!url) return { ok: false, error: 'Не удалось определить URL' }
+  if (isInternalUrl(url)) return { ok: false, error: 'Недоступно на внутренних страницах' }
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return { ok: false, error: 'Режим чтения работает только на веб-страницах' }
+  }
+
+  const currentTitle = getTabTitle(tab)
+
+  const result = await extractArticle(wc)
+  if (!result.ok) return result
+
+  tab.isReaderMode = true
+  tab.readerOriginalUrl = url
+  tab.readerOriginalTitle = currentTitle || url
+  tab.readerData = result.article
+  tab.title = result.article.title || currentTitle || 'Режим чтения'
+  tab.favicon = null
+
+  loadReaderPage(tab)
+  sendTabsUpdate()
+  sendActiveTabUrl()
+  broadcastSecurityState()
+
+  return { ok: true, entered: true }
+}
+
+function exitReaderMode(tab) {
+  if (!tab) tab = getActiveTab()
+  if (!tab || !tab.isReaderMode) return
+
+  const url = tab.readerOriginalUrl || ''
+  const title = tab.readerOriginalTitle || ''
+
+  tab.isReaderMode = false
+  tab.readerData = null
+  tab.readerOriginalUrl = ''
+  tab.readerOriginalTitle = ''
+
+  if (url) {
+    if (!tab.view || tab.view.webContents.isDestroyed()) recreateTab(tab)
+    tab.title = title || url
+    tab.view.webContents.loadURL(url)
+  } else {
+    goHomeInActiveTab()
+  }
+}
+
+function loadReaderPage(tab) {
+  if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return
+  const u = getReaderPageUrl()
+  if (u) tab.view.webContents.loadURL(u)
+  else tab.view.webContents.loadFile(getReaderPagePath())
 }
 
 // ============================================================
@@ -1180,6 +1292,7 @@ function attachTabListeners(tab) {
     const isS = isSettingsPageUrl(currentUrl)
     const isD = isDownloadsPageUrl(currentUrl)
     const isC = isCookiesPageUrl(currentUrl)
+    const isR = isReaderPageUrl(currentUrl)
     const isE = isErrorPageUrl(currentUrl)
     const isW = isWarningPageUrl(currentUrl)
     tab.isBookmarksManager = isBM
@@ -1194,8 +1307,9 @@ function attachTabListeners(tab) {
       : (isS ? 'Настройки'
       : (isD ? 'Загрузки'
       : (isC ? 'Cookie'
+      : (isR ? 'Режим чтения'
       : (isE ? 'Не удалось открыть страницу'
-      : (isW ? 'Соединение не защищено' : title))))))
+      : (isW ? 'Соединение не защищено' : title)))))))
     sendTabsUpdate()
   })
 
@@ -1235,7 +1349,7 @@ function attachTabListeners(tab) {
 
   attachShortcuts(wc)
 
-  // Контекстное меню веб-страницы (правый клик)
+  // Контекстное меню веб-страницы
   wc.on('context-menu', (_e, params) => {
     showTabContextMenu({
       params,
@@ -1253,11 +1367,20 @@ function attachTabListeners(tab) {
     tab.url = navUrl
     if (tab.id === activeTabId) hideStatusBar()
 
+    // Если пользователь ушёл с reader-страницы — сбрасываем состояние
+    if (tab.isReaderMode && !isReaderPageUrl(navUrl)) {
+      tab.isReaderMode = false
+      tab.readerData = null
+      tab.readerOriginalUrl = ''
+      tab.readerOriginalTitle = ''
+    }
+
     const isBM = isBookmarksPageUrl(navUrl)
     const isH = isHistoryPageUrl(navUrl)
     const isS = isSettingsPageUrl(navUrl)
     const isD = isDownloadsPageUrl(navUrl)
     const isC = isCookiesPageUrl(navUrl)
+    const isR = isReaderPageUrl(navUrl)
     const isE = isErrorPageUrl(navUrl)
     const isW = isWarningPageUrl(navUrl)
     tab.isBookmarksManager = isBM
@@ -1273,13 +1396,16 @@ function attachTabListeners(tab) {
     else if (isS) { tab.title = 'Настройки'; tab.favicon = null }
     else if (isD) { tab.title = 'Загрузки'; tab.favicon = null }
     else if (isC) { tab.title = 'Cookie'; tab.favicon = null }
+    else if (isR) { tab.title = 'Режим чтения'; tab.favicon = null }
     else if (isE) { tab.title = 'Не удалось открыть страницу'; tab.favicon = null }
     else if (isW) { tab.title = 'Соединение не защищено'; tab.favicon = null }
     else {
       const t = wc.getTitle()
       if (t) tab.title = t
       tab.favicon = null
-      addToHistory(navUrl, t)
+      if (!tab.isPrivate) {
+        addToHistory(navUrl, t)
+      }
     }
 
     if (tab.id === activeTabId) {
@@ -1330,20 +1456,26 @@ function recreateTab(tab) {
   if (!tab) return
   if (!tab.isUnloaded) return
 
-  const view = new WebContentsView({
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      webSecurity: true,
-      allowRunningInsecureContent: false,
-    },
-  })
+  const viewPrefs = {
+    preload: path.join(__dirname, '../preload/index.js'),
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: false,
+    webSecurity: true,
+    allowRunningInsecureContent: false,
+  }
+  if (tab.isPrivate) {
+    const privateSession = getPrivateSession()
+    attachTrackerBlocker(privateSession, () => !!settingsCache.blockTrackers)
+    attachDownloadHandlerToSession(privateSession)
+    viewPrefs.session = privateSession
+  }
+
+  const view = new WebContentsView({ webPreferences: viewPrefs })
 
   tab.view = view
   mainWindow.contentView.addChildView(view)
-  view.setBackgroundColor(getBackgroundColor())
+  view.setBackgroundColor(tab.isPrivate ? PRIVATE_BG_COLOR : getBackgroundColor())
 
   attachTabSecurityHandlers(tab)
   attachTabListeners(tab)
@@ -1385,23 +1517,31 @@ function enforceTabLimit() {
 // ============================================================
 // ============ ВКЛАДКИ =======================================
 // ============================================================
-function createTab(url) {
+function createTab(url, options = {}) {
+  const isPrivate = !!options.private
   const id = nextTabId++
 
-  const view = new WebContentsView({
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      webSecurity: true,
-      allowRunningInsecureContent: false,
-    },
-  })
+  const viewPrefs = {
+    preload: path.join(__dirname, '../preload/index.js'),
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: false,
+    webSecurity: true,
+    allowRunningInsecureContent: false,
+  }
+  if (isPrivate) {
+    const privateSession = getPrivateSession()
+    attachTrackerBlocker(privateSession, () => !!settingsCache.blockTrackers)
+    attachDownloadHandlerToSession(privateSession)
+    viewPrefs.session = privateSession
+  }
+
+  const view = new WebContentsView({ webPreferences: viewPrefs })
 
   const tab = {
     id, view,
-    title: 'Новая вкладка', url: '', favicon: null, isLoading: false,
+    title: isPrivate ? 'Приватная вкладка' : 'Новая вкладка',
+    url: '', favicon: null, isLoading: false,
     isBookmarksManager: false,
     isHistoryManager: false,
     isSettingsPage: false,
@@ -1416,6 +1556,12 @@ function createTab(url) {
     savedTitle: '',
     savedFavicon: null,
     lastActiveAt: Date.now(),
+    isPrivate,
+    // Reader mode
+    isReaderMode: false,
+    readerData: null,
+    readerOriginalUrl: '',
+    readerOriginalTitle: '',
   }
 
   if (url === INTERNAL_BOOKMARKS) { tab.isBookmarksManager = true; tab.title = 'Закладки' }
@@ -1426,9 +1572,8 @@ function createTab(url) {
 
   tabs.push(tab)
   mainWindow.contentView.addChildView(view)
-  view.setBackgroundColor(getBackgroundColor())
+  view.setBackgroundColor(isPrivate ? PRIVATE_BG_COLOR : getBackgroundColor())
   attachTabSecurityHandlers(tab)
-
   attachTabListeners(tab)
 
   loadTabContent(tab, url)
@@ -1472,6 +1617,11 @@ function loadTabContent(tab, url) {
   if (url === INTERNAL_COOKIES) {
     const u = getCookiesPageUrl()
     if (u) wc.loadURL(u); else wc.loadFile(getCookiesPagePath())
+    return
+  }
+  if (url === INTERNAL_READER) {
+    const u = getReaderPageUrl()
+    if (u) wc.loadURL(u); else wc.loadFile(getReaderPagePath())
     return
   }
   if (url && url !== 'about:blank') {
@@ -1739,7 +1889,6 @@ function createWindow() {
     ...(!isMac && !isWin ? {
       titleBarStyle: 'default',
     } : {}),
-    // На Windows/Linux меню доступно по Alt, но не мозолит глаза
     ...(!isMac ? {
       autoHideMenuBar: true,
     } : {}),
@@ -1802,6 +1951,14 @@ function executeShortcut(command) {
   switch (command) {
     case 'new-tab':
       createTab()
+      break
+
+    case 'new-private-tab':
+      createTab(undefined, { private: true })
+      break
+
+    case 'toggle-reader':
+      toggleReaderMode()
       break
 
     case 'restore-tab':
@@ -2043,10 +2200,22 @@ app.whenReady().then(() => {
     callback(false)
   })
 
+  // При старте чистим приватные данные (могли остаться с прошлого сеанса, если был краш)
+  clearPrivateData()
+
   // ============ Меню приложения ============
   const menuActions = {
     // Файл
     newTab: () => createTab(),
+    newPrivateTab: () => createTab(undefined, { private: true }),
+    closeAllPrivate: () => {
+      const privateTabs = tabs.filter(t => t.isPrivate)
+      for (const t of privateTabs) {
+        closeTab(t.id)
+      }
+      if (tabs.length === 0) createTab()
+      clearPrivateData()
+    },
     closeTab: () => {
       const t = getActiveTab()
       if (t) closeTab(t.id)
@@ -2060,6 +2229,8 @@ app.whenReady().then(() => {
       const tab = getActiveTab()
       if (!tab || tab.isUnloaded || !tab.view) return
       const wc = tab.view.webContents
+      const { dialog } = await import('electron')
+      const path = await import('path')
       let title = 'page'
       try { title = wc.getTitle() || 'page' } catch {}
       const safe = String(title).replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').slice(0, 100) || 'page'
@@ -2082,13 +2253,13 @@ app.whenReady().then(() => {
         try { tab.view.webContents.print() } catch (e) {}
       }
     },
-    importBookmarks: () => {
-      // Открываем страницу закладок — там пользователь нажмёт «Импорт»
+    importBookmarks: async () => {
       openBookmarksManager()
     },
-    exportBookmarks: () => {
+    exportBookmarks: async () => {
       openBookmarksManager()
     },
+    toggleReader: () => toggleReaderMode(),
 
     // Правка
     findInPage: () => {
@@ -2205,11 +2376,39 @@ app.whenReady().then(() => {
     const tab = createTab(url)
     return tab ? { id: tab.id } : null
   })
+  ipcMain.handle('tab-create-private', () => {
+    const tab = createTab(undefined, { private: true })
+    return tab ? { id: tab.id } : null
+  })
+  ipcMain.handle('close-all-private-tabs', () => {
+    const privateTabs = tabs.filter(t => t.isPrivate)
+    for (const t of privateTabs) {
+      closeTab(t.id)
+    }
+    if (tabs.length === 0) {
+      createTab()
+    }
+    clearPrivateData()
+    return { closed: privateTabs.length }
+  })
   ipcMain.handle('tab-close', (_e, id) => closeTab(id))
   ipcMain.handle('tab-switch', (_e, id) => switchTab(id))
   ipcMain.handle('tab-restore-closed', () => restoreClosedTab())
   ipcMain.handle('tab-duplicate', (_e, id) => duplicateTab(id))
   ipcMain.handle('navigate', (_e, input) => navigateInActiveTab(input))
+
+  // Reader mode
+  ipcMain.handle('reader-toggle', () => toggleReaderMode())
+  ipcMain.handle('reader-exit', () => {
+    const tab = getActiveTab()
+    if (tab) exitReaderMode(tab)
+    return { ok: true }
+  })
+  ipcMain.handle('reader-get-content', (event) => {
+    const tab = tabs.find(t => t.view && !t.view.webContents.isDestroyed() && t.view.webContents === event.sender)
+    if (!tab || !tab.readerData) return null
+    return tab.readerData
+  })
 
   ipcMain.handle('go-back', () => {
     const tab = getActiveTab()
@@ -2390,6 +2589,29 @@ app.whenReady().then(() => {
     return { ok: true }
   })
 
+  // ============ Трекеры и реклама ============
+  ipcMain.handle('get-tracker-setting', () => ({
+    enabled: !!settingsCache.blockTrackers,
+    stats: getTrackerStats(),
+  }))
+  ipcMain.handle('set-tracker-setting', (_e, value) => {
+    settingsCache.blockTrackers = !!value
+    saveSettings()
+    if (!settingsCache.blockTrackers) {
+      resetTrackerStats()
+    }
+    return {
+      enabled: !!settingsCache.blockTrackers,
+      stats: getTrackerStats(),
+    }
+  })
+  ipcMain.handle('get-tracker-stats', () => getTrackerStats())
+  ipcMain.handle('reset-tracker-stats', () => {
+    resetTrackerStats()
+    return getTrackerStats()
+  })
+
+  // ============ Импорт/экспорт закладок ============
   ipcMain.handle('export-bookmarks', async () => {
     const total = bookmarksCache.length
     if (total === 0) {
@@ -2920,6 +3142,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   flushSessionSave()
+  clearPrivateData()
 })
 
 app.on('window-all-closed', () => {

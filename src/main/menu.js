@@ -1,11 +1,5 @@
 /**
  * Меню приложения.
- * Строит шаблон в зависимости от платформы:
- *   • macOS — с app menu (название приложения) и Preferences по Cmd+,
- *   • Windows/Linux — без app menu, с Quit в File.
- *
- * ВАЖНО: role-команды (copy/paste/cut/undo/selectAll) обязательны —
- * без них не работает копипаст в адресной строке и на веб-страницах.
  */
 import { Menu, app, shell } from 'electron'
 
@@ -15,12 +9,6 @@ function safeCall(fn) {
   }
 }
 
-/**
- * @param {object} actions — колбэки из main/index.js
- * @param {object} [opts]
- * @param {string} [opts.appName] — название приложения (для macOS app menu)
- * @returns {Electron.Menu}
- */
 export function buildApplicationMenu(actions, opts = {}) {
   const isMac = process.platform === 'darwin'
   const appName = opts.appName || app.getName() || 'Browser Project'
@@ -67,9 +55,9 @@ export function buildApplicationMenu(actions, opts = {}) {
       click: safeCall(actions.newTab),
     },
     {
-      label: 'Новое окно',
-      accelerator: 'CmdOrCtrl+N',
-      enabled: false, // многоконность пока не поддерживается
+      label: 'Новая приватная вкладка',
+      accelerator: 'CmdOrCtrl+Shift+N',
+      click: safeCall(actions.newPrivateTab),
     },
     { type: 'separator' },
     {
@@ -88,10 +76,6 @@ export function buildApplicationMenu(actions, opts = {}) {
     },
     { type: 'separator' },
     {
-      label: 'Открыть файл…',
-      enabled: false, // нет файлового диалога для открытия локальных файлов
-    },
-    {
       label: 'Сохранить страницу как…',
       accelerator: 'CmdOrCtrl+S',
       click: safeCall(actions.savePageAs),
@@ -109,6 +93,11 @@ export function buildApplicationMenu(actions, opts = {}) {
     {
       label: 'Экспорт закладок…',
       click: safeCall(actions.exportBookmarks),
+    },
+    { type: 'separator' },
+    {
+      label: 'Закрыть все приватные вкладки',
+      click: safeCall(actions.closeAllPrivate),
     },
   ]
 
@@ -255,18 +244,7 @@ export function buildApplicationMenu(actions, opts = {}) {
         accelerator: 'CmdOrCtrl+J',
         click: safeCall(actions.openDownloads),
       },
-      { type: 'separator' },
-      {
-        label: 'Назад',
-        enabled: false,
-        visible: false,
-      },
-      {
-        label: 'Вперёд',
-        enabled: false,
-        visible: false,
-      },
-    ].filter(Boolean),
+    ],
   })
 
   // ============================================================
@@ -353,9 +331,6 @@ export function buildApplicationMenu(actions, opts = {}) {
   return Menu.buildFromTemplate(template)
 }
 
-/**
- * Устанавливает menu как application menu и настраивает about panel (macOS).
- */
 export function setupApplicationMenu(actions, opts = {}) {
   const isMac = process.platform === 'darwin'
   const appName = opts.appName || app.getName() || 'Browser Project'

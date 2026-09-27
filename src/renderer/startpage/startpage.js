@@ -89,6 +89,17 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('.search-form')) hideSuggestions()
 })
 
+// ============ Кнопка приватного режима ============
+const btnPrivate = document.getElementById('btn-private')
+
+btnPrivate.addEventListener('click', async () => {
+  try {
+    await window.browserAPI.createPrivateTab()
+  } catch (err) {
+    console.error('[UI] Не удалось открыть приватную вкладку:', err)
+  }
+})
+
 // ============ Ярлыки пользователя ============
 const STORAGE_KEY = 'browser-project:shortcuts'
 
@@ -281,5 +292,3 @@ addForm.addEventListener('submit', (e) => {
 
 // ============ Первичный рендер ============
 renderShortcuts()
-
-// Тема и акцент: см. shared/theme.js

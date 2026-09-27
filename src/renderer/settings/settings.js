@@ -7,6 +7,8 @@ let currentAccent = 'orange'
 let accentOptions = []
 let downloadsInfo = { path: '', askWhereToSave: false, isDefault: true }
 let restoreSessionEnabled = true
+let trackerEnabled = true
+let trackerStats = { total: 0, byDomain: [] }
 
 // ============ Инициализация ============
 async function init() {
@@ -16,6 +18,10 @@ async function init() {
   currentAccent = settings.accent || 'orange'
   restoreSessionEnabled = settings.restoreSession !== false
   accentOptions = await window.browserAPI.getAccentOptions()
+
+  const trackerSetting = await window.browserAPI.getTrackerSetting()
+  trackerEnabled = !!trackerSetting.enabled
+  trackerStats = trackerSetting.stats || { total: 0, byDomain: [] }
 
   renderSection('appearance')
 
@@ -177,9 +183,55 @@ async function renderDownloadsSettings() {
 
 // ============ Приватность ============
 function renderPrivacy() {
+  const topDomains = (trackerStats.byDomain || []).slice(0, 5)
+  const topDomainsHtml = topDomains.length
+    ? `
+      <div class="tracker-top">
+        <div class="tracker-top-title">Топ домены:</div>
+        <ul class="tracker-top-list">
+          ${topDomains.map(d => `
+            <li>
+              <span class="tracker-domain">${escapeHtml(d.domain)}</span>
+              <span class="tracker-count">${d.count}</span>
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    `
+    : ''
+
   content.innerHTML = `
     <div class="section-title">Приватность</div>
-    <div class="section-subtitle">Управление локальными данными и поведением при запуске.</div>
+    <div class="section-subtitle">Управление локальными данными и блокировкой трекеров.</div>
+
+    <div class="setting-group">
+      <div class="setting-row">
+        <div class="setting-body">
+          <div class="setting-label">Блокировка трекеров и рекламы</div>
+          <div class="setting-desc">Отменяет запросы к аналитическим и рекламным сетям (Google Analytics, Facebook Pixel, Yandex Metrica и др.)</div>
+        </div>
+        <div class="setting-control">
+          <label class="switch">
+            <input type="checkbox" id="tracker-switch" ${trackerEnabled ? 'checked' : ''}>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-row column">
+        <div class="setting-body">
+          <div class="setting-label">Статистика блокировки</div>
+          <div class="setting-desc">
+            Заблокировано запросов с момента запуска браузера:
+            <strong id="tracker-total">${trackerStats.total || 0}</strong>
+          </div>
+        </div>
+        ${topDomainsHtml}
+        <div class="setting-control" style="margin-top: 12px;">
+          <button id="reset-tracker-stats" class="btn-dl btn-dl-secondary">Сбросить статистику</button>
+        </div>
+      </div>
+    </div>
 
     <div class="setting-group">
       <div class="setting-row">
@@ -200,10 +252,9 @@ function renderPrivacy() {
       <div class="setting-row column">
         <div class="setting-label">Cookie-менеджер</div>
         <div class="setting-desc" style="margin-top: 8px;">
-          Просмотр и удаление cookie, которые сайты сохранили в браузере.
+          Просмотр, редактирование и удаление cookie, которые сайты сохранили в браузере.
           Все cookie хранятся <strong>только на вашем устройстве</strong> —
           браузер не сохраняет их в свои файлы, не логирует содержимое и никуда не отправляет.
-          Это соответствует принципу «локальной обработки» и не требует статуса оператора персональных данных (152-ФЗ).
         </div>
         <div class="setting-control" style="margin-top: 14px;">
           <button id="open-cookies" class="btn-dl">Открыть менеджер cookie</button>
@@ -234,6 +285,22 @@ function renderPrivacy() {
     const res = await window.browserAPI.setSessionSetting(value)
     restoreSessionEnabled = res.restoreSession
   })
+
+  document.getElementById('tracker-switch').addEventListener('change', async (e) => {
+    const value = e.target.checked
+    const res = await window.browserAPI.setTrackerSetting(value)
+    trackerEnabled = res.enabled
+    trackerStats = res.stats
+    renderPrivacy()
+  })
+
+  const resetStatsBtn = document.getElementById('reset-tracker-stats')
+  if (resetStatsBtn) {
+    resetStatsBtn.addEventListener('click', async () => {
+      trackerStats = await window.browserAPI.resetTrackerStats()
+      renderPrivacy()
+    })
+  }
 }
 
 // ============ О браузере ============
@@ -296,6 +363,7 @@ function renderAbout() {
           <strong>Electron</strong> — MIT License<br>
           <strong>Vite</strong> — MIT License<br>
           <strong>electron-vite</strong> — MIT License<br>
+          <strong>@mozilla/readability</strong> — Apache 2.0<br>
           <strong>DuckDuckGo Autocomplete API</strong> — публичный API<br>
           <strong>DuckDuckGo Favicon Service</strong> — публичный сервис
         </div>
@@ -308,7 +376,8 @@ function renderAbout() {
         <div class="setting-desc" style="margin-top: 8px; line-height: 1.6;">
           Учебный проект по информатике. Кроссплатформенный браузер на Electron + Vite
           с поддержкой вкладок, закладок, папок, истории, загрузок, cookie-менеджера,
-          восстановления сессии и кастомных разрешений. Все данные хранятся локально на устройстве пользователя.
+          восстановления сессии, приватного режима, режима чтения, блокировки трекеров
+          и кастомных разрешений. Все данные хранятся локально на устройстве пользователя.
         </div>
       </div>
     </div>
@@ -322,9 +391,7 @@ function escapeHtml(str) {
   }[c]))
 }
 
-// ============ Тема и акцент (синхронизация UI) ============
-// Применение темы и акцента к DOM делает shared/theme.js.
-// Здесь только обновляем активные кнопки при изменении.
+// ============ Тема и акцент ============
 window.themeManager.onTheme(() => {
   const themeOptions = document.getElementById('theme-options')
   if (themeOptions) {
@@ -344,5 +411,4 @@ window.themeManager.onAccent((data) => {
   }
 })
 
-// ============ Запуск ============
 init()

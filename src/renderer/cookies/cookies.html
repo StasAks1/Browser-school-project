@@ -15,6 +15,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'none';">
   <title>Cookie</title>
   <link rel="stylesheet" href="cookies.css">
+  <link rel="stylesheet" href="../shared/tooltip.css">
 </head>
 <body>
   <div class="page">
@@ -51,7 +52,6 @@
     <main class="content" id="content"></main>
   </div>
 
-  <!-- Модалка подтверждения -->
   <div id="confirm-modal" class="modal-overlay">
     <div class="modal">
       <h2 class="modal-title" id="confirm-title">Подтвердите действие</h2>
@@ -63,7 +63,6 @@
     </div>
   </div>
 
-  <!-- Модалка добавления/редактирования cookie -->
   <div id="cookie-modal" class="modal-overlay">
     <div class="modal modal-wide">
       <h2 class="modal-title" id="cookie-modal-title">Новый cookie</h2>
@@ -133,6 +132,7 @@
   <div id="toast" class="toast"></div>
 
   <script src="../shared/theme.js"></script>
+  <script src="../shared/tooltip.js"></script>
   <script src="cookies.js"></script>
 </body>
 </html>

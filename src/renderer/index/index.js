@@ -9,6 +9,7 @@ const btnSettings = document.getElementById('btn-settings')
 const btnDownloads = document.getElementById('btn-downloads')
 const downloadsBadge = document.getElementById('downloads-badge')
 const btnStar = document.getElementById('btn-star')
+const btnReader = document.getElementById('btn-reader')
 const tabsContainer = document.getElementById('tabs')
 const btnNewTab = document.getElementById('new-tab-btn')
 const bookmarksContainer = document.getElementById('bookmarks')
@@ -27,13 +28,11 @@ window.browserAPI.getPlatform().then((platform) => {
 })
 
 // ============ Тема и акцент ============
-// Применение темы и акцента полностью управляется через shared/theme.js.
-// Если нужно реагировать на смену темы — используй window.themeManager.onTheme(cb).
+// Управляются через shared/theme.js
 
 // ============ Индикатор безопасности ============
 function setSecurityState(state) {
   securityIndicator.dataset.state = state || 'unknown'
-
   const titles = {
     secure: 'Соединение защищено (HTTPS)',
     insecure: 'Соединение не защищено (HTTP)',
@@ -79,6 +78,41 @@ btnSettings.addEventListener('click', () => window.browserAPI.openSettingsPage()
 btnDownloads.addEventListener('click', () => window.browserAPI.openDownloadsPage())
 btnBookmarksManager.addEventListener('click', () => window.browserAPI.openBookmarksManager())
 
+// ============ Reader Mode ============
+btnReader.addEventListener('click', async () => {
+  if (btnReader.disabled) return
+  try {
+    const res = await window.browserAPI.toggleReaderMode()
+    if (!res || !res.ok) {
+      console.warn('[reader]', res && res.error)
+    }
+  } catch (err) {
+    console.error('[reader]', err)
+  }
+})
+
+function updateReaderButton(activeTab) {
+  if (!activeTab) {
+    btnReader.disabled = true
+    btnReader.classList.remove('active')
+    return
+  }
+  const isReader = !!activeTab.isReader
+  const canRead = !!activeTab.canRead
+
+  btnReader.disabled = !canRead && !isReader
+  btnReader.classList.toggle('active', isReader)
+
+  if (isReader) {
+    btnReader.title = 'Выйти из режима чтения (Cmd/Ctrl+Shift+E)'
+  } else if (canRead) {
+    btnReader.title = 'Режим чтения (Cmd/Ctrl+Shift+E)'
+  } else {
+    btnReader.title = 'Режим чтения недоступен на этой странице'
+  }
+}
+
+// ============ Звёздочка ============
 btnStar.addEventListener('click', async () => {
   const url = input.value.trim()
   if (!url) return
@@ -114,6 +148,10 @@ window.browserAPI.onScrollState((isScrolled) => {
 
 window.browserAPI.onTabsUpdated((tabs) => {
   tabsState = tabs || []
+  const active = tabsState.find((t) => t.isActive)
+  const isPrivate = !!(active && active.isPrivate)
+  document.body.dataset.private = isPrivate ? 'true' : 'false'
+  updateReaderButton(active)
   renderTabs()
 })
 
@@ -167,7 +205,12 @@ function renderTabs() {
 
   for (const tab of tabsState) {
     const el = document.createElement('div')
-    el.className = 'tab' + (tab.isActive ? ' active' : '') + (tab.isUnloaded ? ' unloaded' : '')
+    const classes = ['tab']
+    if (tab.isActive) classes.push('active')
+    if (tab.isUnloaded) classes.push('unloaded')
+    if (tab.isPrivate) classes.push('private')
+    if (tab.isReader) classes.push('reader')
+    el.className = classes.join(' ')
     el.dataset.tabId = String(tab.id)
     el.title = tab.isUnloaded ? `${tab.title || ''} (выгружена)` : (tab.title || '')
 
@@ -347,6 +390,9 @@ btnNewTab.addEventListener('click', () => window.browserAPI.createTab())
 
 window.browserAPI.getTabs().then((tabs) => {
   tabsState = tabs || []
+  const active = tabsState.find((t) => t.isActive)
+  document.body.dataset.private = active && active.isPrivate ? 'true' : 'false'
+  updateReaderButton(active)
   renderTabs()
 })
 

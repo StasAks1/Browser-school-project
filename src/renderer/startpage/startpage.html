@@ -16,9 +16,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Новая вкладка</title>
   <link rel="stylesheet" href="startpage.css">
+  <link rel="stylesheet" href="../shared/tooltip.css">
 </head>
 <body>
   <div class="page">
+    <button
+      type="button"
+      id="btn-private"
+      class="private-btn"
+      title="Приватная вкладка (Cmd/Ctrl+Shift+N)"
+      aria-label="Открыть приватную вкладку"
+    >
+      <svg class="private-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/>
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M2 2l20 20"/>
+      </svg>
+    </button>
+
     <main class="search-area">
       <h1 class="greeting">Привет!</h1>
       <p class="subtitle">Что будем искать сегодня?</p>
@@ -54,7 +69,6 @@
     </footer>
   </div>
 
-  <!-- Модалка добавления/редактирования ярлыка -->
   <div id="add-modal" class="modal-overlay">
     <div class="modal">
       <h2 class="modal-title" id="modal-title">Новый ярлык</h2>
@@ -76,6 +90,7 @@
   </div>
 
   <script src="../shared/theme.js"></script>
+  <script src="../shared/tooltip.js"></script>
   <script src="startpage.js"></script>
 </body>
 </html>

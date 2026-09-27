@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('browserAPI', {
 
   getTabs: () => ipcRenderer.invoke('get-tabs'),
   createTab: (url) => ipcRenderer.invoke('tab-create', url),
+  createPrivateTab: () => ipcRenderer.invoke('tab-create-private'),
+  closeAllPrivateTabs: () => ipcRenderer.invoke('close-all-private-tabs'),
   closeTab: (id) => ipcRenderer.invoke('tab-close', id),
   switchTab: (id) => ipcRenderer.invoke('tab-switch', id),
   restoreClosedTab: () => ipcRenderer.invoke('tab-restore-closed'),
@@ -23,6 +25,11 @@ contextBridge.exposeInMainWorld('browserAPI', {
   stopFindInPage: () => ipcRenderer.invoke('stop-find-in-page'),
   onFindResult: (cb) => ipcRenderer.on('find-result', (_e, result) => cb(result)),
   onOpenFindBar: (cb) => ipcRenderer.on('open-find-bar', () => cb()),
+
+  // Reader
+  toggleReaderMode: () => ipcRenderer.invoke('reader-toggle'),
+  exitReaderMode: () => ipcRenderer.invoke('reader-exit'),
+  getReaderContent: () => ipcRenderer.invoke('reader-get-content'),
 
   warningGoBack: () => ipcRenderer.invoke('warning-go-back'),
   warningProceed: (url) => ipcRenderer.invoke('warning-proceed', url),
@@ -83,7 +90,6 @@ contextBridge.exposeInMainWorld('browserAPI', {
   openUrlFromHistory: (id) => ipcRenderer.invoke('open-url-from-history', id),
   openUrlInNewTab: (url) => ipcRenderer.invoke('open-url-in-new-tab', url),
 
-  // ============ Cookie ============
   getCookies: () => ipcRenderer.invoke('get-cookies'),
   removeCookie: (payload) => ipcRenderer.invoke('remove-cookie', payload),
   removeCookiesByDomain: (domain) => ipcRenderer.invoke('remove-cookies-by-domain', domain),
@@ -95,6 +101,12 @@ contextBridge.exposeInMainWorld('browserAPI', {
   getSessionSetting: () => ipcRenderer.invoke('get-session-setting'),
   setSessionSetting: (value) => ipcRenderer.invoke('set-session-setting', value),
   clearSession: () => ipcRenderer.invoke('clear-session'),
+
+  // ============ Трекеры и реклама ============
+  getTrackerSetting: () => ipcRenderer.invoke('get-tracker-setting'),
+  setTrackerSetting: (value) => ipcRenderer.invoke('set-tracker-setting', value),
+  getTrackerStats: () => ipcRenderer.invoke('get-tracker-stats'),
+  resetTrackerStats: () => ipcRenderer.invoke('reset-tracker-stats'),
 
   exportBookmarks: () => ipcRenderer.invoke('export-bookmarks'),
   importBookmarks: () => ipcRenderer.invoke('import-bookmarks'),

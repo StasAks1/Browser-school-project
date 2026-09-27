@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('browser-resolved-theme');
+        document.documentElement.dataset.theme = (t === 'light') ? 'light' : 'dark';
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+      try {
+        var s = localStorage.getItem('reader:font-size') || 'medium';
+        document.documentElement.dataset.fontSize = s;
+      } catch (e) {
+        document.documentElement.dataset.fontSize = 'medium';
+      }
+    })();
+  </script>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' data: https:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none';">
+  <title>Режим чтения</title>
+  <link rel="stylesheet" href="reader.css">
+</head>
+<body>
+  <header class="reader-toolbar">
+    <button id="btn-back" class="toolbar-btn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 12H5M12 19l-7-7 7-7"/>
+      </svg>
+      <span>Вернуться к статье</span>
+    </button>
+
+    <div class="toolbar-right">
+      <div class="font-controls" role="group" aria-label="Размер шрифта">
+        <button type="button" class="font-btn" data-size="small" title="Мелкий">A</button>
+        <button type="button" class="font-btn" data-size="medium" title="Обычный">A</button>
+        <button type="button" class="font-btn" data-size="large" title="Крупный">A</button>
+        <button type="button" class="font-btn" data-size="xlarge" title="Очень крупный">A</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="reader-content">
+    <article class="reader-article">
+      <header class="article-header">
+        <div class="article-site" id="site-name"></div>
+        <h1 class="article-title" id="title"></h1>
+        <div class="article-meta" id="meta"></div>
+      </header>
+      <div class="article-body" id="body"></div>
+      <footer class="article-footer">
+        <span id="reading-time"></span>
+      </footer>
+    </article>
+  </main>
+
+  <div class="reader-empty" id="empty" hidden>
+    <div class="empty-icon">📖</div>
+    <div class="empty-title">Не удалось открыть режим чтения</div>
+    <div class="empty-subtitle" id="empty-subtitle">Попробуйте открыть статью напрямую.</div>
+    <button type="button" class="empty-btn" id="empty-back">Вернуться к странице</button>
+  </div>
+
+  <script src="../shared/theme.js"></script>
+  <script src="reader.js"></script>
+</body>
+</html>

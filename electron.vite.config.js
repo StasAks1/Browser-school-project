@@ -24,6 +24,7 @@ export default defineConfig({
           settings: resolve(__dirname, 'src/renderer/settings/settings.html'),
           downloads: resolve(__dirname, 'src/renderer/downloads/downloads.html'),
           cookies: resolve(__dirname, 'src/renderer/cookies/cookies.html'),
+          reader: resolve(__dirname, 'src/renderer/reader/reader.html'),
           statusbar: resolve(__dirname, 'src/renderer/statusbar/statusbar.html'),
           error: resolve(__dirname, 'src/renderer/error/error.html'),
           warning: resolve(__dirname, 'src/renderer/warning/warning.html'),
