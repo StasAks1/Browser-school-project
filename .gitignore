@@ -80,3 +80,19 @@ session.json
 
 # ============ Временные файлы при сборке иконок ============
 build/icon.iconset/
+
+# ============ Vite / electron-vite кэш ============
+.vite/
+node_modules/.vite/
+
+# ============ electron-builder временные файлы ============
+.electron-builder/
+*.blockmap
+
+# ============ macOS системы сборки ============
+*.dSYM/
+__MACOSX/
+
+# ============ Пользовательские данные в корне проекта ============
+# (на случай если кто-то запустит с --user-data-dir=. )
+userData/
