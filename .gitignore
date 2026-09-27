@@ -1,18 +1,12 @@
 # ============ Зависимости ============
 node_modules/
 
-# ============ Сборка (electron-vite) ============
+# ============ Сборка electron-vite ============
 out/
-dist/
 
-# ============ Сборка (electron-builder) ============
+# ============ Сборка electron-builder (output) ============
+dist/
 release/
-build/
-*.dmg
-*.exe
-*.AppImage
-*.deb
-*.rpm
 
 # ============ Логи ============
 *.log
@@ -56,3 +50,6 @@ Desktop.ini
 bookmarks.json
 history.json
 settings.json
+
+# ============ Временные файлы при сборке иконок ============
+build/icon.iconset/

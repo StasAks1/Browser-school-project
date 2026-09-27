@@ -13,8 +13,28 @@ contextBridge.exposeInMainWorld('browserAPI', {
   createTab: (url) => ipcRenderer.invoke('tab-create', url),
   closeTab: (id) => ipcRenderer.invoke('tab-close', id),
   switchTab: (id) => ipcRenderer.invoke('tab-switch', id),
+  restoreClosedTab: () => ipcRenderer.invoke('tab-restore-closed'),
+  duplicateTab: (id) => ipcRenderer.invoke('tab-duplicate', id),
+  showTabMenu: (id) => ipcRenderer.invoke('show-tab-menu', id),
 
-  // Настройки / Тема / Акцент
+  getSecurityState: () => ipcRenderer.invoke('get-security-state'),
+
+  // Поиск по странице
+  findInPage: (text, options) => ipcRenderer.invoke('find-in-page', text, options || {}),
+  stopFindInPage: () => ipcRenderer.invoke('stop-find-in-page'),
+  onFindResult: (cb) => ipcRenderer.on('find-result', (_e, result) => cb(result)),
+  onOpenFindBar: (cb) => ipcRenderer.on('open-find-bar', () => cb()),
+
+  // Warning страница (HTTP)
+  warningGoBack: () => ipcRenderer.invoke('warning-go-back'),
+  warningProceed: (url) => ipcRenderer.invoke('warning-proceed', url),
+
+  // Error страница
+  errorRetry: () => ipcRenderer.invoke('error-retry'),
+  errorGoBack: () => ipcRenderer.invoke('error-go-back'),
+  errorGoHome: () => ipcRenderer.invoke('error-go-home'),
+  errorProceedAnyway: (url) => ipcRenderer.invoke('error-proceed-anyway', url),
+
   getSettings: () => ipcRenderer.invoke('get-settings'),
   getTheme: () => ipcRenderer.invoke('get-theme'),
   setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
@@ -23,6 +43,18 @@ contextBridge.exposeInMainWorld('browserAPI', {
   setAccent: (name) => ipcRenderer.invoke('set-accent', name),
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
   openSettingsPage: () => ipcRenderer.invoke('open-settings-page'),
+
+  getDownloads: () => ipcRenderer.invoke('get-downloads'),
+  getDownloadsPath: () => ipcRenderer.invoke('get-downloads-path'),
+  setDownloadsPath: () => ipcRenderer.invoke('set-downloads-path'),
+  resetDownloadsPath: () => ipcRenderer.invoke('reset-downloads-path'),
+  setAskWhereToSave: (value) => ipcRenderer.invoke('set-ask-where-to-save', value),
+  openDownloadedFile: (id) => ipcRenderer.invoke('open-downloaded-file', id),
+  showDownloadedInFolder: (id) => ipcRenderer.invoke('show-downloaded-in-folder', id),
+  removeDownloadEntry: (id) => ipcRenderer.invoke('remove-download-entry', id),
+  clearDownloadsList: () => ipcRenderer.invoke('clear-downloads-list'),
+  deleteDownloadedFile: (id) => ipcRenderer.invoke('delete-downloaded-file', id),
+  openDownloadsPage: () => ipcRenderer.invoke('open-downloads-page'),
 
   getLibrary: () => ipcRenderer.invoke('get-library'),
   bookmarkCurrentPage: () => ipcRenderer.invoke('bookmark-current-page'),
@@ -63,16 +95,18 @@ contextBridge.exposeInMainWorld('browserAPI', {
   onHistoryUpdated: (cb) => ipcRenderer.on('history-updated', () => cb()),
   onThemeChanged: (cb) => ipcRenderer.on('theme-changed', (_e, theme) => cb(theme)),
   onAccentChanged: (cb) => ipcRenderer.on('accent-changed', (_e, data) => cb(data)),
+  onDownloadsUpdated: (cb) => ipcRenderer.on('downloads-updated', (_e, list) => cb(list)),
+  onDownloadActiveCount: (cb) => ipcRenderer.on('download-active-count', (_e, count) => cb(count)),
+  onSecurityState: (cb) => ipcRenderer.on('security-state', (_e, state) => cb(state)),
+  onTabCloseRequest: (cb) => ipcRenderer.on('tab-close-request', (_e, id) => cb(id)),
 })
 
-// ============ Сохраняем тему в localStorage для anti-flicker ============
 ipcRenderer.on('theme-changed', (_e, theme) => {
   try {
     localStorage.setItem('browser-resolved-theme', theme === 'light' ? 'light' : 'dark')
   } catch (e) {}
 })
 
-// ============ Слежение за скроллом ============
 let wasScrolled = false
 function handleScroll() {
   const y = document.documentElement.scrollTop || document.body.scrollTop || window.scrollY || 0

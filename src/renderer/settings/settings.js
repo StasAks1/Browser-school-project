@@ -5,6 +5,7 @@ let appInfo = null
 let currentTheme = 'dark'
 let currentAccent = 'orange'
 let accentOptions = []
+let downloadsInfo = { path: '', askWhereToSave: false, isDefault: true }
 
 // ============ Инициализация ============
 async function init() {
@@ -28,6 +29,7 @@ async function init() {
 // ============ Рендер секции ============
 function renderSection(section) {
   if (section === 'appearance') renderAppearance()
+  else if (section === 'downloads') renderDownloadsSettings()
   else if (section === 'about') renderAbout()
 }
 
@@ -115,6 +117,62 @@ function renderAppearance() {
   })
 }
 
+// ============ Загрузки (раздел настроек) ============
+async function renderDownloadsSettings() {
+  downloadsInfo = await window.browserAPI.getDownloadsPath()
+
+  content.innerHTML = `
+    <div class="section-title">Загрузки</div>
+    <div class="section-subtitle">Куда сохранять файлы и как спрашивать о месте сохранения.</div>
+
+    <div class="setting-group">
+      <div class="setting-row column">
+        <div class="setting-body">
+          <div class="setting-label">Папка для сохранения файлов</div>
+          <div class="setting-desc">Куда будут попадать скачанные файлы по умолчанию</div>
+        </div>
+        <div class="setting-control dl-path-control">
+          <div class="dl-path" id="dl-path" title="${escapeHtml(downloadsInfo.path)}">${escapeHtml(downloadsInfo.path)}</div>
+          <div class="dl-actions">
+            <button id="dl-change" class="btn-dl">Изменить…</button>
+            ${!downloadsInfo.isDefault ? '<button id="dl-reset" class="btn-dl btn-dl-secondary">По умолчанию</button>' : ''}
+          </div>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-body">
+          <div class="setting-label">Спрашивать, куда сохранять</div>
+          <div class="setting-desc">Показывать диалог сохранения перед каждой загрузкой</div>
+        </div>
+        <div class="setting-control">
+          <label class="switch">
+            <input type="checkbox" id="ask-switch" ${downloadsInfo.askWhereToSave ? 'checked' : ''}>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+  `
+
+  document.getElementById('dl-change').addEventListener('click', async () => {
+    downloadsInfo = await window.browserAPI.setDownloadsPath()
+    renderDownloadsSettings()
+  })
+
+  const resetBtn = document.getElementById('dl-reset')
+  if (resetBtn) {
+    resetBtn.addEventListener('click', async () => {
+      downloadsInfo = await window.browserAPI.resetDownloadsPath()
+      renderDownloadsSettings()
+    })
+  }
+
+  document.getElementById('ask-switch').addEventListener('change', async (e) => {
+    downloadsInfo = await window.browserAPI.setAskWhereToSave(e.target.checked)
+  })
+}
+
 // ============ О браузере ============
 function renderAbout() {
   const info = appInfo || {
@@ -186,7 +244,7 @@ function renderAbout() {
         <div class="setting-label">Итоговый проект</div>
         <div class="setting-desc" style="margin-top: 8px; line-height: 1.6;">
           Учебный проект по информатике. Кроссплатформенный браузер на Electron + Vite
-          с поддержкой вкладок, закладок, папок, истории и кастомных разрешений.
+          с поддержкой вкладок, закладок, папок, истории, загрузок и кастомных разрешений.
           Все данные хранятся локально на устройстве пользователя.
         </div>
       </div>

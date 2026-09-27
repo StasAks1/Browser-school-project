@@ -1,10 +1,13 @@
-import { app, BrowserWindow, WebContentsView, ipcMain, net, Menu, clipboard, screen, nativeTheme } from 'electron'
+import { app, BrowserWindow, WebContentsView, ipcMain, net, Menu, clipboard, screen, nativeTheme, dialog, shell } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { debugLog, debugDevTools, debugTabEvent, debugStartupBanner, attachNetworkLogger } from './debug.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// Отключаем принудительный HTTPS-First Mode — чтобы HTTP-сайты не блокировались
+app.commandLine.appendSwitch('disable-features', 'HttpsFirstModeV2,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable')
 
 const CHROME_HEIGHT_BASE = 80
 const CHROME_HEIGHT_BOOKMARKS = 112
@@ -14,6 +17,7 @@ const CHROME_ANIM_FRAME = 16
 const INTERNAL_BOOKMARKS = 'internal://bookmarks'
 const INTERNAL_HISTORY = 'internal://history'
 const INTERNAL_SETTINGS = 'internal://settings'
+const INTERNAL_DOWNLOADS = 'internal://downloads'
 
 const POPUP_WIDTH = 300
 const POPUP_HEIGHT = 165
@@ -24,10 +28,12 @@ const HISTORY_MAX_ENTRIES = 10000
 const HISTORY_MAX_AGE_DAYS = 90
 const HISTORY_DEDUPE_MS = 30 * 1000
 
+const DOWNLOADS_MAX_ENTRIES = 1000
+const CLOSED_TABS_MAX = 25
+
 const SUGGESTIONS_CACHE_TTL = 5 * 60 * 1000
 const SUGGESTIONS_TIMEOUT = 3000
 
-// ============ АКЦЕНТНЫЕ ЦВЕТА ============
 const ACCENT_COLORS = {
   orange: { color: '#de5833', hover: '#c94a28', label: 'Оранжевый' },
   blue:   { color: '#3b82f6', hover: '#2563eb', label: 'Синий' },
@@ -47,7 +53,19 @@ let nextTabId = 1
 let bookmarksCache = []
 let foldersCache = []
 let historyCache = []
-let settingsCache = { theme: 'dark', accent: ACCENT_DEFAULT }
+let downloadsCache = []
+let settingsCache = {
+  theme: 'dark',
+  accent: ACCENT_DEFAULT,
+  downloadPath: '',
+  askWhereToSave: false,
+}
+
+const activeDownloads = new Map()
+const closedTabsStack = []
+
+const allowedInsecureHosts = new Set()
+const allowedBadCertHosts = new Set()
 
 let currentChromeHeight = CHROME_HEIGHT_BASE
 let chromeAnimTimer = null
@@ -108,10 +126,7 @@ async function requestPermissionDialog(permission, origin) {
       popupWindow.webContents.send('accent-changed', getAccentData())
     })
 
-    const payload = {
-      origin: origin || 'Сайт', permission,
-      label: getPermissionLabel(permission),
-    }
+    const payload = { origin: origin || 'Сайт', permission, label: getPermissionLabel(permission) }
 
     const url = getPermissionPopupUrl()
     if (url) popupWindow.loadURL(`${url}?${new URLSearchParams(payload).toString()}`)
@@ -142,29 +157,106 @@ async function requestPermissionDialog(permission, origin) {
   })
 }
 
+// ============================================================
+// ============ ЗАГРУЗКИ ======================================
+// ============================================================
+function getDefaultDownloadPath() {
+  if (settingsCache.downloadPath) return settingsCache.downloadPath
+  return app.getPath('downloads')
+}
+
+function handleWillDownload(event, item, webContents) {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const filename = item.getFilename()
+  const url = item.getURL()
+
+  let savePath
+  if (settingsCache.askWhereToSave) {
+    const result = dialog.showSaveDialogSync(mainWindow, {
+      defaultPath: path.join(getDefaultDownloadPath(), filename),
+      title: 'Сохранить файл',
+    })
+    if (!result) { item.cancel(); return }
+    savePath = result
+  } else {
+    savePath = path.join(getDefaultDownloadPath(), filename)
+  }
+
+  item.setSavePath(savePath)
+
+  const entry = {
+    id, filename, url, savePath,
+    totalBytes: item.getTotalBytes(),
+    receivedBytes: 0,
+    state: 'progressing',
+    startedAt: Date.now(),
+    completedAt: null,
+  }
+
+  downloadsCache.unshift(entry)
+  if (downloadsCache.length > DOWNLOADS_MAX_ENTRIES) {
+    downloadsCache = downloadsCache.slice(0, DOWNLOADS_MAX_ENTRIES)
+  }
+  saveDownloads()
+  broadcastDownloads()
+  broadcastDownloadActiveCount()
+
+  activeDownloads.set(id, item)
+
+  item.on('updated', (_e, state) => {
+    const e = downloadsCache.find(d => d.id === id)
+    if (!e) return
+    e.receivedBytes = item.getReceivedBytes()
+    e.totalBytes = item.getTotalBytes()
+    if (state === 'interrupted') e.state = 'interrupted'
+    else if (state === 'progressing') e.state = item.isPaused() ? 'paused' : 'progressing'
+    broadcastDownloads()
+  })
+
+  item.once('done', (_e, state) => {
+    const e = downloadsCache.find(d => d.id === id)
+    if (e) {
+      e.completedAt = Date.now()
+      e.receivedBytes = item.getReceivedBytes()
+      e.totalBytes = item.getTotalBytes()
+      if (state === 'completed') e.state = 'completed'
+      else if (state === 'cancelled') e.state = 'cancelled'
+      else e.state = 'interrupted'
+      const actualPath = item.getSavePath()
+      if (actualPath) e.savePath = actualPath
+    }
+    activeDownloads.delete(id)
+    saveDownloads()
+    broadcastDownloads()
+    broadcastDownloadActiveCount()
+  })
+}
+
+function attachDownloadHandlerToSession(ses) {
+  if (!ses || ses._willDownloadAttached) return
+  ses._willDownloadAttached = true
+  ses.on('will-download', handleWillDownload)
+}
+
+// ============================================================
+// ============ БЕЗОПАСНОСТЬ ==================================
+// ============================================================
 function setupSecurity() {
   const ses = mainWindow.webContents.session
 
   ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
     if (SAFE_PERMISSIONS.includes(permission)) { callback(true); return }
-
     if (permission === 'media') {
       const types = details?.mediaTypes || []
       if (!Array.isArray(types) || types.length === 0) { callback(false); return }
     }
-
     let origin = ''
     try {
       const src = details?.securityOrigin || details?.requestingUrl || webContents.getURL()
       origin = new URL(src).hostname
     } catch { origin = '' }
-
     const key = `${origin}:${permission}`
-    if (permissionDecisions.has(key)) {
-      callback(permissionDecisions.get(key))
-      return
-    }
-
+    if (permissionDecisions.has(key)) { callback(permissionDecisions.get(key)); return }
     requestPermissionDialog(permission, origin).then((allowed) => {
       permissionDecisions.set(key, allowed)
       callback(allowed)
@@ -174,10 +266,8 @@ function setupSecurity() {
   ses.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
     if (SAFE_PERMISSIONS.includes(permission)) return true
     if (permission === 'media') return true
-
     let origin = ''
     try { origin = new URL(requestingOrigin || webContents.getURL()).hostname } catch {}
-
     const key = `${origin}:${permission}`
     if (permissionDecisions.has(key)) return permissionDecisions.get(key)
     return false
@@ -194,10 +284,12 @@ function setupSecurity() {
   })
 
   attachNetworkLogger(ses)
+  attachDownloadHandlerToSession(ses)
 }
 
 function attachTabSecurityHandlers(tab) {
   const wc = tab.view.webContents
+  attachDownloadHandlerToSession(wc.session)
 
   wc.setWindowOpenHandler(({ url }) => {
     debugTabEvent(tab.id, 'window.open', url)
@@ -211,25 +303,54 @@ function attachTabSecurityHandlers(tab) {
   wc.on('will-navigate', (event, url) => {
     debugTabEvent(tab.id, 'will-navigate', url)
     if (isTrustedInternalUrl(url)) return
-    let ok = false
-    try {
-      const p = new URL(url)
-      if (['http:', 'https:', 'about:'].includes(p.protocol)) ok = true
-    } catch {}
-    if (!ok) event.preventDefault()
+
+    let parsed = null
+    try { parsed = new URL(url) } catch {}
+
+    if (!parsed) { event.preventDefault(); return }
+
+    if (parsed.protocol === 'https:' || parsed.protocol === 'about:') return
+
+    if (parsed.protocol === 'http:') {
+      if (allowedInsecureHosts.has(parsed.hostname)) return
+      event.preventDefault()
+      loadWarningPage(tab, url)
+      return
+    }
+
+    event.preventDefault()
   })
 
   wc.on('will-redirect', (event, url) => {
     debugTabEvent(tab.id, 'will-redirect', url)
     if (isTrustedInternalUrl(url)) return
-    try {
-      const p = new URL(url)
-      if (p.protocol === 'file:') event.preventDefault()
-    } catch {}
+
+    let parsed = null
+    try { parsed = new URL(url) } catch {}
+
+    if (parsed && parsed.protocol === 'http:' && !allowedInsecureHosts.has(parsed.hostname)) {
+      event.preventDefault()
+      loadWarningPage(tab, url)
+      return
+    }
+
+    if (parsed && parsed.protocol === 'file:') {
+      event.preventDefault()
+    }
   })
 
   wc.on('render-process-gone', (_e, details) => {
     debugLog('Security', `Render process вкладки ${tab.id} упал: ${details.reason}`)
+  })
+
+  wc.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return
+    if (errorCode === -3 || errorCode === -1) return
+    if (isTrustedInternalUrl(validatedURL) || isTrustedInternalUrl(wc.getURL())) return
+    if (wc.getURL().includes('warning.html')) return
+
+    debugLog('Tab', `did-fail-load #${tab.id}: ${errorCode} ${errorDescription} (${validatedURL})`)
+    loadErrorPage(tab, validatedURL, errorCode, errorDescription)
   })
 }
 
@@ -240,6 +361,9 @@ function isTrustedInternalUrl(url) {
     url.includes('bookmarks/bookmarks.html') ||
     url.includes('history/history.html') ||
     url.includes('settings/settings.html') ||
+    url.includes('downloads/downloads.html') ||
+    url.includes('error/error.html') ||
+    url.includes('warning/warning.html') ||
     url.includes('index/index.html') ||
     url.includes('popup/popup.html') ||
     url.includes('permission/permission.html')
@@ -269,6 +393,18 @@ function getSettingsPagePath() { return path.join(__dirname, '../renderer/settin
 function getSettingsPageUrl() {
   return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/settings/settings.html` : null
 }
+function getDownloadsPagePath() { return path.join(__dirname, '../renderer/downloads/downloads.html') }
+function getDownloadsPageUrl() {
+  return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/downloads/downloads.html` : null
+}
+function getErrorPagePath() { return path.join(__dirname, '../renderer/error/error.html') }
+function getErrorPageUrl() {
+  return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/error/error.html` : null
+}
+function getWarningPagePath() { return path.join(__dirname, '../renderer/warning/warning.html') }
+function getWarningPageUrl() {
+  return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/warning/warning.html` : null
+}
 function getPopupPath() { return path.join(__dirname, '../renderer/popup/popup.html') }
 function getPopupUrl() {
   return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/popup/popup.html` : null
@@ -280,9 +416,10 @@ function getPermissionPopupUrl() {
 function getBookmarksFile() { return path.join(app.getPath('userData'), 'bookmarks.json') }
 function getHistoryFile() { return path.join(app.getPath('userData'), 'history.json') }
 function getSettingsFile() { return path.join(app.getPath('userData'), 'settings.json') }
+function getDownloadsFile() { return path.join(app.getPath('userData'), 'downloads.json') }
 
 // ============================================================
-// ============ НАСТРОЙКИ / ТЕМА / АКЦЕНТ =====================
+// ============ НАСТРОЙКИ =====================================
 // ============================================================
 function loadSettings() {
   try {
@@ -293,14 +430,16 @@ function loadSettings() {
       settingsCache = {
         theme: ['light', 'dark', 'system'].includes(data.theme) ? data.theme : 'dark',
         accent: ACCENT_COLORS[data.accent] ? data.accent : ACCENT_DEFAULT,
+        downloadPath: typeof data.downloadPath === 'string' ? data.downloadPath : '',
+        askWhereToSave: !!data.askWhereToSave,
       }
     } else {
-      settingsCache = { theme: 'dark', accent: ACCENT_DEFAULT }
+      settingsCache = { theme: 'dark', accent: ACCENT_DEFAULT, downloadPath: '', askWhereToSave: false }
       saveSettings()
     }
   } catch (err) {
     console.error('Failed to load settings:', err)
-    settingsCache = { theme: 'dark', accent: ACCENT_DEFAULT }
+    settingsCache = { theme: 'dark', accent: ACCENT_DEFAULT, downloadPath: '', askWhereToSave: false }
   }
 }
 
@@ -337,7 +476,6 @@ function getAccentOptions() {
 
 function applyBackgroundColors() {
   const color = getBackgroundColor()
-
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setBackgroundColor(color)
   if (chromeView && !chromeView.webContents.isDestroyed()) chromeView.setBackgroundColor(color)
   for (const tab of tabs) {
@@ -347,46 +485,49 @@ function applyBackgroundColors() {
 
 function broadcastTheme() {
   const theme = getResolvedTheme()
-
-  if (chromeView && !chromeView.webContents.isDestroyed()) {
-    chromeView.webContents.send('theme-changed', theme)
-  }
+  if (chromeView && !chromeView.webContents.isDestroyed()) chromeView.webContents.send('theme-changed', theme)
   for (const tab of tabs) {
-    if (tab.view && !tab.view.webContents.isDestroyed()) {
-      tab.view.webContents.send('theme-changed', theme)
-    }
+    if (tab.view && !tab.view.webContents.isDestroyed()) tab.view.webContents.send('theme-changed', theme)
   }
-  if (popupWindow && !popupWindow.isDestroyed()) {
-    popupWindow.webContents.send('theme-changed', theme)
-  }
+  if (popupWindow && !popupWindow.isDestroyed()) popupWindow.webContents.send('theme-changed', theme)
   if (pendingPermission && pendingPermission.popupWindow && !pendingPermission.popupWindow.isDestroyed()) {
     pendingPermission.popupWindow.webContents.send('theme-changed', theme)
   }
-
   applyBackgroundColors()
-
-  debugLog('Theme', `Разослано: ${theme} (настройка: ${settingsCache.theme})`)
 }
 
 function broadcastAccent() {
   const data = getAccentData()
-
-  if (chromeView && !chromeView.webContents.isDestroyed()) {
-    chromeView.webContents.send('accent-changed', data)
-  }
+  if (chromeView && !chromeView.webContents.isDestroyed()) chromeView.webContents.send('accent-changed', data)
   for (const tab of tabs) {
-    if (tab.view && !tab.view.webContents.isDestroyed()) {
-      tab.view.webContents.send('accent-changed', data)
-    }
+    if (tab.view && !tab.view.webContents.isDestroyed()) tab.view.webContents.send('accent-changed', data)
   }
-  if (popupWindow && !popupWindow.isDestroyed()) {
-    popupWindow.webContents.send('accent-changed', data)
-  }
+  if (popupWindow && !popupWindow.isDestroyed()) popupWindow.webContents.send('accent-changed', data)
   if (pendingPermission && pendingPermission.popupWindow && !pendingPermission.popupWindow.isDestroyed()) {
     pendingPermission.popupWindow.webContents.send('accent-changed', data)
   }
+}
 
-  debugLog('Accent', `Разослан: ${data.name} (${data.color})`)
+// ============================================================
+// ============ СОСТОЯНИЕ СОЕДИНЕНИЯ ==========================
+// ============================================================
+function getSecurityState(url) {
+  if (!url || url === 'about:blank') return 'unknown'
+  if (isTrustedInternalUrl(url)) return 'internal'
+  if (url.startsWith('file:') || url.startsWith('data:') || url.startsWith('devtools:')) return 'internal'
+  try {
+    const u = new URL(url)
+    if (u.protocol === 'https:') return 'secure'
+    if (u.protocol === 'http:') return 'insecure'
+  } catch {}
+  return 'unknown'
+}
+
+function broadcastSecurityState() {
+  if (!chromeView || chromeView.webContents.isDestroyed()) return
+  const active = getActiveTab()
+  const url = active?.view?.webContents.getURL() || ''
+  chromeView.webContents.send('security-state', getSecurityState(url))
 }
 
 // ============================================================
@@ -420,11 +561,9 @@ function cleanupOldHistory() {
   const cutoff = Date.now() - HISTORY_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
   const before = historyCache.length
   historyCache = historyCache.filter((e) => e.visitedAt >= cutoff)
-
   if (historyCache.length > HISTORY_MAX_ENTRIES) {
     historyCache = historyCache.slice(-HISTORY_MAX_ENTRIES)
   }
-
   if (historyCache.length !== before) saveHistory()
 }
 
@@ -432,19 +571,15 @@ function addToHistory(url, title) {
   if (!url) return
   if (
     isTrustedInternalUrl(url) ||
-    url.startsWith('file:') ||
-    url.startsWith('data:') ||
-    url.startsWith('about:') ||
-    url.startsWith('devtools:')
+    url.startsWith('file:') || url.startsWith('data:') ||
+    url.startsWith('about:') || url.startsWith('devtools:')
   ) return
-
   try {
     const parsed = new URL(url)
     if (!['http:', 'https:'].includes(parsed.protocol)) return
   } catch { return }
 
   const now = Date.now()
-
   const last = historyCache[historyCache.length - 1]
   if (last && last.url === url && (now - last.visitedAt) < HISTORY_DEDUPE_MS) {
     last.visitedAt = now
@@ -455,23 +590,17 @@ function addToHistory(url, title) {
 
   historyCache.push({
     id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
-    url,
-    title: title || url,
-    visitedAt: now,
+    url, title: title || url, visitedAt: now,
   })
-
   if (historyCache.length > HISTORY_MAX_ENTRIES) {
     historyCache = historyCache.slice(-HISTORY_MAX_ENTRIES)
   }
-
   saveHistory()
   broadcastHistory()
 }
 
 function broadcastHistory() {
-  if (chromeView && !chromeView.webContents.isDestroyed()) {
-    chromeView.webContents.send('history-updated')
-  }
+  if (chromeView && !chromeView.webContents.isDestroyed()) chromeView.webContents.send('history-updated')
   for (const tab of tabs) {
     if (tab.isHistoryManager && tab.view && !tab.view.webContents.isDestroyed()) {
       tab.view.webContents.send('history-updated')
@@ -480,7 +609,49 @@ function broadcastHistory() {
 }
 
 // ============================================================
-// ============ БИБЛИОТЕКА (закладки + папки) =================
+// ============ ЗАГРУЗКИ: ФАЙЛ ================================
+// ============================================================
+function loadDownloads() {
+  try {
+    const file = getDownloadsFile()
+    if (fs.existsSync(file)) {
+      const raw = fs.readFileSync(file, 'utf-8')
+      downloadsCache = Array.isArray(JSON.parse(raw)) ? JSON.parse(raw) : []
+    } else {
+      downloadsCache = []
+    }
+  } catch (err) {
+    console.error('Failed to load downloads:', err)
+    downloadsCache = []
+  }
+}
+
+function saveDownloads() {
+  try {
+    fs.writeFileSync(getDownloadsFile(), JSON.stringify(downloadsCache, null, 2), 'utf-8')
+  } catch (err) {
+    console.error('Failed to save downloads:', err)
+  }
+}
+
+function broadcastDownloads() {
+  const payload = downloadsCache.slice()
+  if (chromeView && !chromeView.webContents.isDestroyed()) chromeView.webContents.send('downloads-updated', payload)
+  for (const tab of tabs) {
+    if (tab.isDownloadsManager && tab.view && !tab.view.webContents.isDestroyed()) {
+      tab.view.webContents.send('downloads-updated', payload)
+    }
+  }
+}
+
+function broadcastDownloadActiveCount() {
+  if (!chromeView || chromeView.webContents.isDestroyed()) return
+  const activeCount = downloadsCache.filter(d => d.state === 'progressing' || d.state === 'paused').length
+  chromeView.webContents.send('download-active-count', activeCount)
+}
+
+// ============================================================
+// ============ БИБЛИОТЕКА ====================================
 // ============================================================
 function loadBookmarks() {
   try {
@@ -488,7 +659,6 @@ function loadBookmarks() {
     if (fs.existsSync(file)) {
       const raw = fs.readFileSync(file, 'utf-8')
       const data = JSON.parse(raw)
-
       if (Array.isArray(data)) {
         bookmarksCache = data.map((b) => ({ ...b, folderId: null }))
         foldersCache = []
@@ -530,9 +700,7 @@ function serializeLibrary() {
 
 function broadcastLibrary() {
   const payload = serializeLibrary()
-  if (chromeView && !chromeView.webContents.isDestroyed()) {
-    chromeView.webContents.send('library-updated', payload)
-  }
+  if (chromeView && !chromeView.webContents.isDestroyed()) chromeView.webContents.send('library-updated', payload)
   for (const tab of tabs) {
     if (tab.isBookmarksManager && tab.view && !tab.view.webContents.isDestroyed()) {
       tab.view.webContents.send('library-updated', payload)
@@ -554,8 +722,12 @@ function isStartpageUrl(url) { if (!url) return true; return url.includes('start
 function isBookmarksPageUrl(url) { if (!url) return false; return url.includes('bookmarks/bookmarks.html') }
 function isHistoryPageUrl(url) { if (!url) return false; return url.includes('history/history.html') }
 function isSettingsPageUrl(url) { if (!url) return false; return url.includes('settings/settings.html') }
+function isDownloadsPageUrl(url) { if (!url) return false; return url.includes('downloads/downloads.html') }
+function isErrorPageUrl(url) { if (!url) return false; return url.includes('error/error.html') }
+function isWarningPageUrl(url) { if (!url) return false; return url.includes('warning/warning.html') }
 function isInternalUrl(url) {
-  return isStartpageUrl(url) || isBookmarksPageUrl(url) || isHistoryPageUrl(url) || isSettingsPageUrl(url)
+  return isStartpageUrl(url) || isBookmarksPageUrl(url) || isHistoryPageUrl(url) ||
+         isSettingsPageUrl(url) || isDownloadsPageUrl(url) || isErrorPageUrl(url) || isWarningPageUrl(url)
 }
 
 function serializeTabs() {
@@ -594,12 +766,10 @@ function sendLoadingState() {
 function applyLayout(chromeHeight) {
   if (!mainWindow || !chromeView) return
   const [width, height] = mainWindow.getContentSize()
-
   chromeView.setBounds({
     x: 0, y: 0, width,
     height: Math.max(0, Math.min(chromeHeight, height)),
   })
-
   for (const tab of tabs) {
     if (!tab.view) continue
     if (tab.id === activeTabId) {
@@ -652,7 +822,7 @@ function updateChromeHeightForBookmarks() {
 // ============================================================
 function isUrlLike(input) {
   if (!input) return false
-  if (input === INTERNAL_BOOKMARKS || input === INTERNAL_HISTORY || input === INTERNAL_SETTINGS) return true
+  if (input === INTERNAL_BOOKMARKS || input === INTERNAL_HISTORY || input === INTERNAL_SETTINGS || input === INTERNAL_DOWNLOADS) return true
   if (/\s/.test(input)) return false
   if (/^https?:\/\//i.test(input)) return true
   if (/^localhost(:\d+)?(\/|$)/.test(input)) return true
@@ -662,12 +832,59 @@ function isUrlLike(input) {
 
 function normalizeToUrl(input) {
   const trimmed = input.trim()
-  if (trimmed === INTERNAL_BOOKMARKS || trimmed === INTERNAL_HISTORY || trimmed === INTERNAL_SETTINGS) return trimmed
+  if (trimmed === INTERNAL_BOOKMARKS || trimmed === INTERNAL_HISTORY || trimmed === INTERNAL_SETTINGS || trimmed === INTERNAL_DOWNLOADS) return trimmed
   if (isUrlLike(trimmed)) {
     if (/^https?:\/\//i.test(trimmed)) return trimmed
     return 'https://' + trimmed
   }
   return `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}`
+}
+
+// ============================================================
+// ============ WARNING / ERROR ===============================
+// ============================================================
+function loadWarningPage(tab, targetUrl) {
+  const params = new URLSearchParams({ url: targetUrl })
+  const pageUrl = getWarningPageUrl()
+
+  if (pageUrl) {
+    tab.view.webContents.loadURL(`${pageUrl}?${params.toString()}`)
+  } else {
+    tab.view.webContents.loadFile(getWarningPagePath(), { query: { url: targetUrl } })
+  }
+
+  tab.isWarningPage = true
+  tab.isErrorPage = false
+  tab.warningUrl = targetUrl
+  tab.title = 'Соединение не защищено'
+  tab.favicon = null
+  sendTabsUpdate()
+  broadcastSecurityState()
+}
+
+function loadErrorPage(tab, failedUrl, errorCode, errorDesc) {
+  const params = new URLSearchParams({
+    url: failedUrl || '',
+    code: String(errorCode || ''),
+    desc: errorDesc || '',
+  })
+
+  const pageUrl = getErrorPageUrl()
+  if (pageUrl) {
+    tab.view.webContents.loadURL(`${pageUrl}?${params.toString()}`)
+  } else {
+    tab.view.webContents.loadFile(getErrorPagePath(), {
+      query: { url: failedUrl || '', code: String(errorCode || ''), desc: errorDesc || '' },
+    })
+  }
+
+  tab.isErrorPage = true
+  tab.isWarningPage = false
+  tab.errorUrl = failedUrl
+  tab.title = 'Не удалось открыть страницу'
+  tab.favicon = null
+  sendTabsUpdate()
+  broadcastSecurityState()
 }
 
 // ============================================================
@@ -693,18 +910,21 @@ function createTab(url) {
     isBookmarksManager: false,
     isHistoryManager: false,
     isSettingsPage: false,
+    isDownloadsManager: false,
+    isErrorPage: false,
+    isWarningPage: false,
+    errorUrl: '',
+    warningUrl: '',
   }
 
   if (url === INTERNAL_BOOKMARKS) { tab.isBookmarksManager = true; tab.title = 'Закладки' }
   if (url === INTERNAL_HISTORY) { tab.isHistoryManager = true; tab.title = 'История' }
   if (url === INTERNAL_SETTINGS) { tab.isSettingsPage = true; tab.title = 'Настройки' }
+  if (url === INTERNAL_DOWNLOADS) { tab.isDownloadsManager = true; tab.title = 'Загрузки' }
 
   tabs.push(tab)
   mainWindow.contentView.addChildView(view)
-
-  // Фон до отрисовки — убирает мигание
   view.setBackgroundColor(getBackgroundColor())
-
   attachTabSecurityHandlers(tab)
 
   const wc = view.webContents
@@ -720,16 +940,27 @@ function createTab(url) {
     const isBM = isBookmarksPageUrl(currentUrl)
     const isH = isHistoryPageUrl(currentUrl)
     const isS = isSettingsPageUrl(currentUrl)
+    const isD = isDownloadsPageUrl(currentUrl)
+    const isE = isErrorPageUrl(currentUrl)
+    const isW = isWarningPageUrl(currentUrl)
     tab.isBookmarksManager = isBM
     tab.isHistoryManager = isH
     tab.isSettingsPage = isS
-    tab.title = isBM ? 'Закладки' : (isH ? 'История' : (isS ? 'Настройки' : title))
+    tab.isDownloadsManager = isD
+    tab.isErrorPage = isE
+    tab.isWarningPage = isW
+    tab.title = isBM ? 'Закладки'
+      : (isH ? 'История'
+      : (isS ? 'Настройки'
+      : (isD ? 'Загрузки'
+      : (isE ? 'Не удалось открыть страницу'
+      : (isW ? 'Соединение не защищено' : title)))))
     sendTabsUpdate()
   })
 
   wc.on('page-favicon-updated', (_e, favicons) => {
     const currentUrl = wc.getURL()
-    if (isBookmarksPageUrl(currentUrl) || isHistoryPageUrl(currentUrl) || isSettingsPageUrl(currentUrl)) {
+    if (isInternalUrl(currentUrl)) {
       tab.favicon = null
     } else {
       tab.favicon = Array.isArray(favicons) && favicons.length ? favicons[0] : null
@@ -739,14 +970,40 @@ function createTab(url) {
 
   wc.on('did-stop-loading', () => {
     tab.isLoading = false
-    if (tab.id === activeTabId) { sendLoadingState(); sendActiveTabUrl() }
+    if (tab.id === activeTabId) {
+      sendLoadingState()
+      sendActiveTabUrl()
+      broadcastSecurityState()
+    }
     sendTabsUpdate()
   })
 
-  // Отправляем тему и акцент, когда DOM готов
   wc.on('dom-ready', () => {
     wc.send('theme-changed', getResolvedTheme())
     wc.send('accent-changed', getAccentData())
+  })
+
+  // ============ Поиск по странице ============
+  // Событие приходит, когда поиск что-то нашёл
+  wc.on('found-in-page', (_e, result) => {
+    if (tab.id !== activeTabId) return
+    if (!chromeView || chromeView.webContents.isDestroyed()) return
+    chromeView.webContents.send('find-result', {
+      matches: result.matches || 0,
+      activeMatch: result.activeMatchOrdinal || 0,
+    })
+  })
+
+  // Перехват Cmd+F / Ctrl+F, когда фокус на странице
+  wc.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    const isMod = input.meta || input.control
+    if (isMod && input.key.toLowerCase() === 'f') {
+      event.preventDefault()
+      if (chromeView && !chromeView.webContents.isDestroyed()) {
+        chromeView.webContents.send('open-find-bar')
+      }
+    }
   })
 
   wc.on('did-navigate', (_e, navUrl) => {
@@ -754,13 +1011,22 @@ function createTab(url) {
     const isBM = isBookmarksPageUrl(navUrl)
     const isH = isHistoryPageUrl(navUrl)
     const isS = isSettingsPageUrl(navUrl)
+    const isD = isDownloadsPageUrl(navUrl)
+    const isE = isErrorPageUrl(navUrl)
+    const isW = isWarningPageUrl(navUrl)
     tab.isBookmarksManager = isBM
     tab.isHistoryManager = isH
     tab.isSettingsPage = isS
+    tab.isDownloadsManager = isD
+    tab.isErrorPage = isE
+    tab.isWarningPage = isW
 
     if (isBM) { tab.title = 'Закладки'; tab.favicon = null }
     else if (isH) { tab.title = 'История'; tab.favicon = null }
     else if (isS) { tab.title = 'Настройки'; tab.favicon = null }
+    else if (isD) { tab.title = 'Загрузки'; tab.favicon = null }
+    else if (isE) { tab.title = 'Не удалось открыть страницу'; tab.favicon = null }
+    else if (isW) { tab.title = 'Соединение не защищено'; tab.favicon = null }
     else {
       const t = wc.getTitle()
       if (t) tab.title = t
@@ -768,22 +1034,19 @@ function createTab(url) {
       addToHistory(navUrl, t)
     }
 
-    if (tab.id === activeTabId) sendActiveTabUrl()
+    if (tab.id === activeTabId) {
+      sendActiveTabUrl()
+      broadcastSecurityState()
+    }
     sendTabsUpdate()
   })
 
   wc.on('did-navigate-in-page', (_e, navUrl) => {
     tab.url = navUrl
-    const isBM = isBookmarksPageUrl(navUrl)
-    const isH = isHistoryPageUrl(navUrl)
-    const isS = isSettingsPageUrl(navUrl)
-    tab.isBookmarksManager = isBM
-    tab.isHistoryManager = isH
-    tab.isSettingsPage = isS
-    if (isBM) tab.title = 'Закладки'
-    if (isH) tab.title = 'История'
-    if (isS) tab.title = 'Настройки'
-    if (tab.id === activeTabId) sendActiveTabUrl()
+    if (tab.id === activeTabId) {
+      sendActiveTabUrl()
+      broadcastSecurityState()
+    }
     sendTabsUpdate()
   })
 
@@ -794,9 +1057,7 @@ function createTab(url) {
   sendTabsUpdate()
   sendActiveTabUrl()
   sendLoadingState()
-
-  debugLog('Tab', `Создана вкладка #${id}`, url || '(startpage)')
-  debugDevTools(wc, `Tab #${id}`)
+  broadcastSecurityState()
 
   return tab
 }
@@ -819,16 +1080,43 @@ function loadTabContent(tab, url) {
     if (u) wc.loadURL(u); else wc.loadFile(getSettingsPagePath())
     return
   }
-  if (url && url !== 'about:blank') { wc.loadURL(url); return }
+  if (url === INTERNAL_DOWNLOADS) {
+    const u = getDownloadsPageUrl()
+    if (u) wc.loadURL(u); else wc.loadFile(getDownloadsPagePath())
+    return
+  }
+  if (url && url !== 'about:blank') {
+    try {
+      const parsed = new URL(url)
+      if (parsed.protocol === 'http:' && !allowedInsecureHosts.has(parsed.hostname)) {
+        loadWarningPage(tab, url)
+        return
+      }
+    } catch {}
+    wc.loadURL(url)
+    return
+  }
   const sp = getStartpageUrl()
   if (sp) wc.loadURL(sp); else wc.loadFile(getStartpagePath())
 }
 
 function closeTab(id) {
-  debugLog('Tab', `Закрытие вкладки #${id}`)
   const idx = tabs.findIndex(t => t.id === id)
   if (idx === -1) return
   const tab = tabs[idx]
+
+  try {
+    const url = tab.view.webContents.getURL()
+    if (url && !isInternalUrl(url) && !url.startsWith('file:') && !url.startsWith('data:') && !url.startsWith('about:')) {
+      closedTabsStack.push({
+        url,
+        title: tab.title || url,
+        favicon: tab.favicon || null,
+      })
+      if (closedTabsStack.length > CLOSED_TABS_MAX) closedTabsStack.shift()
+    }
+  } catch (e) {}
+
   try {
     mainWindow.contentView.removeChildView(tab.view)
     tab.view.webContents.close()
@@ -836,7 +1124,6 @@ function closeTab(id) {
 
   tabs.splice(idx, 1)
 
-  // Закрытие последней вкладки — закрываем браузер
   if (tabs.length === 0) {
     activeTabId = null
     closeBookmarkPopup()
@@ -857,6 +1144,7 @@ function closeTab(id) {
   sendTabsUpdate()
   sendActiveTabUrl()
   sendLoadingState()
+  broadcastSecurityState()
 }
 
 function switchTab(id) {
@@ -867,10 +1155,27 @@ function switchTab(id) {
   sendTabsUpdate()
   sendActiveTabUrl()
   sendLoadingState()
+  broadcastSecurityState()
+}
+
+function restoreClosedTab() {
+  if (closedTabsStack.length === 0) return
+  const entry = closedTabsStack.pop()
+  if (!entry || !entry.url) return
+  createTab(entry.url)
+}
+
+function duplicateTab(id) {
+  const tab = getTab(id)
+  if (!tab) return
+  let url = ''
+  try { url = tab.view.webContents.getURL() } catch (e) {}
+  if (!url) return
+  createTab(url)
 }
 
 // ============================================================
-// ============ ДЕЙСТВИЯ НАД АКТИВНОЙ ВКЛАДКОЙ ================
+// ============ НАВИГАЦИЯ В АКТИВНОЙ ВКЛАДКЕ =================
 // ============================================================
 function navigateInActiveTab(input) {
   const tab = getActiveTab()
@@ -880,25 +1185,38 @@ function navigateInActiveTab(input) {
   if (url === INTERNAL_BOOKMARKS) {
     const u = getBookmarksPageUrl()
     if (u) tab.view.webContents.loadURL(u); else tab.view.webContents.loadFile(getBookmarksPagePath())
-    tab.isBookmarksManager = true; tab.title = 'Закладки'; tab.favicon = null
-    sendTabsUpdate(); return
+    return
   }
   if (url === INTERNAL_HISTORY) {
     const u = getHistoryPageUrl()
     if (u) tab.view.webContents.loadURL(u); else tab.view.webContents.loadFile(getHistoryPagePath())
-    tab.isHistoryManager = true; tab.title = 'История'; tab.favicon = null
-    sendTabsUpdate(); return
+    return
   }
   if (url === INTERNAL_SETTINGS) {
     const u = getSettingsPageUrl()
     if (u) tab.view.webContents.loadURL(u); else tab.view.webContents.loadFile(getSettingsPagePath())
-    tab.isSettingsPage = true; tab.title = 'Настройки'; tab.favicon = null
-    sendTabsUpdate(); return
+    return
   }
+  if (url === INTERNAL_DOWNLOADS) {
+    const u = getDownloadsPageUrl()
+    if (u) tab.view.webContents.loadURL(u); else tab.view.webContents.loadFile(getDownloadsPagePath())
+    return
+  }
+
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol === 'http:' && !allowedInsecureHosts.has(parsed.hostname)) {
+      loadWarningPage(tab, url)
+      return
+    }
+  } catch {}
 
   tab.isBookmarksManager = false
   tab.isHistoryManager = false
   tab.isSettingsPage = false
+  tab.isDownloadsManager = false
+  tab.isErrorPage = false
+  tab.isWarningPage = false
   tab.favicon = null
   sendTabsUpdate()
 
@@ -911,6 +1229,9 @@ function goHomeInActiveTab() {
   tab.isBookmarksManager = false
   tab.isHistoryManager = false
   tab.isSettingsPage = false
+  tab.isDownloadsManager = false
+  tab.isErrorPage = false
+  tab.isWarningPage = false
   tab.favicon = null
   const sp = getStartpageUrl()
   if (sp) tab.view.webContents.loadURL(sp); else tab.view.webContents.loadFile(getStartpagePath())
@@ -920,6 +1241,7 @@ function goHomeInActiveTab() {
 function openBookmarksManager() { createTab(INTERNAL_BOOKMARKS) }
 function openHistoryManager() { createTab(INTERNAL_HISTORY) }
 function openSettingsPage() { createTab(INTERNAL_SETTINGS) }
+function openDownloadsPage() { createTab(INTERNAL_DOWNLOADS) }
 
 // ============================================================
 // ============ POPUP ЗАКЛАДКИ ================================
@@ -1009,6 +1331,9 @@ function createWindow() {
   chromeView.webContents.on('dom-ready', () => {
     chromeView.webContents.send('theme-changed', getResolvedTheme())
     chromeView.webContents.send('accent-changed', getAccentData())
+    const activeCount = downloadsCache.filter(d => d.state === 'progressing' || d.state === 'paused').length
+    chromeView.webContents.send('download-active-count', activeCount)
+    broadcastSecurityState()
   })
 
   createTab()
@@ -1028,53 +1353,34 @@ function createWindow() {
 }
 
 // ============================================================
-// ============ ПОДСКАЗКИ SEARCH (DuckDuckGo Autocomplete) ====
+// ============ ПОДСКАЗКИ SEARCH ==============================
 // ============================================================
 const suggestionsCache = new Map()
 let warmUpPromise = null
 
 function warmUpSuggestions() {
   if (warmUpPromise) return warmUpPromise
-
   const url = 'https://duckduckgo.com/ac/?q=a&type=list&kl=ru-ru'
-  debugLog('Suggestions', 'Прогрев соединения с DDG...')
-
-  const t0 = Date.now()
   warmUpPromise = net.fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
       'Accept': 'application/json, text/plain, */*',
       'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
     },
-  })
-    .then((res) => {
-      debugLog('Suggestions', `Прогрев завершён за ${Date.now() - t0}мс, статус ${res.status}`)
-      return res
-    })
-    .catch((err) => {
-      debugLog('Suggestions', `Прогрев не удался: ${err.message}`)
-    })
-
+  }).catch(() => {})
   return warmUpPromise
 }
 
 async function fetchSuggestions(query) {
   const q = String(query || '').trim()
   if (q.length < 2) return []
-
   const cached = suggestionsCache.get(q)
-  if (cached && (Date.now() - cached.ts) < SUGGESTIONS_CACHE_TTL) {
-    debugLog('Suggestions', `Из кэша: "${q}" (${cached.items.length})`)
-    return cached.items
-  }
+  if (cached && (Date.now() - cached.ts) < SUGGESTIONS_CACHE_TTL) return cached.items
 
   const url = `https://duckduckgo.com/ac/?q=${encodeURIComponent(q)}&type=list&kl=ru-ru`
-
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), SUGGESTIONS_TIMEOUT)
-
-    const t0 = Date.now()
     const res = await net.fetch(url, {
       signal: controller.signal,
       headers: {
@@ -1083,29 +1389,17 @@ async function fetchSuggestions(query) {
         'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
       },
     })
-
     clearTimeout(timeout)
-    const elapsed = Date.now() - t0
-
-    if (!res.ok) {
-      debugLog('Suggestions', `Статус ${res.status} для "${q}" (${elapsed}мс)`)
-      return []
-    }
-
+    if (!res.ok) return []
     const data = await res.json()
     const items = extractSuggestions(data)
-
     suggestionsCache.set(q, { items, ts: Date.now() })
     if (suggestionsCache.size > 200) {
       const firstKey = suggestionsCache.keys().next().value
       suggestionsCache.delete(firstKey)
     }
-
-    debugLog('Suggestions', `"${q}" → ${items.length} подсказок за ${elapsed}мс`)
     return items
   } catch (err) {
-    if (err.name === 'AbortError') debugLog('Suggestions', `Таймаут для "${q}"`)
-    else debugLog('Suggestions', `Ошибка: ${err.message}`)
     return []
   }
 }
@@ -1137,24 +1431,47 @@ function extractSuggestions(data) {
 app.whenReady().then(() => {
   debugStartupBanner()
 
+  // Иконка в Dock (macOS) — видно уже в dev-режиме
+  if (process.platform === 'darwin' && app.dock) {
+    try {
+      app.dock.setIcon(path.join(__dirname, '../../build/icon.png'))
+    } catch (e) {
+      debugLog('App', `Не удалось установить иконку: ${e.message}`)
+    }
+  }
+
+  // Доверяем "плохим" сертификатам для хостов, которые пользователь подтвердил
+  app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+    try {
+      const parsed = new URL(url)
+      if (allowedBadCertHosts.has(parsed.hostname)) {
+        event.preventDefault()
+        callback(true)
+        debugLog('Security', `Разрешён недействительный сертификат для ${parsed.hostname}`)
+        return
+      }
+    } catch {}
+    callback(false)
+  })
+
   loadSettings()
   loadBookmarks()
   loadHistory()
+  loadDownloads()
   createWindow()
 
   warmUpSuggestions()
 
   nativeTheme.on('updated', () => {
-    if (settingsCache.theme === 'system') {
-      debugLog('Theme', `Системная тема обновлена → ${getResolvedTheme()}`)
-      broadcastTheme()
-    }
+    if (settingsCache.theme === 'system') broadcastTheme()
   })
 
   ipcMain.handle('get-tabs', () => serializeTabs())
   ipcMain.handle('tab-create', (_e, url) => createTab(url))
   ipcMain.handle('tab-close', (_e, id) => closeTab(id))
   ipcMain.handle('tab-switch', (_e, id) => switchTab(id))
+  ipcMain.handle('tab-restore-closed', () => restoreClosedTab())
+  ipcMain.handle('tab-duplicate', (_e, id) => duplicateTab(id))
   ipcMain.handle('navigate', (_e, input) => navigateInActiveTab(input))
 
   ipcMain.handle('go-back', () => {
@@ -1175,6 +1492,100 @@ app.whenReady().then(() => {
     return isInternalUrl(url) ? '' : url
   })
 
+  ipcMain.handle('get-security-state', () => {
+    const active = getActiveTab()
+    const url = active?.view?.webContents.getURL() || ''
+    return getSecurityState(url)
+  })
+
+  ipcMain.handle('show-tab-menu', (_e, tabId) => {
+    const tab = getTab(tabId)
+    if (!tab) return
+    const menu = Menu.buildFromTemplate([
+      { label: 'Дублировать вкладку', click: () => duplicateTab(tabId) },
+      { label: 'Закрыть вкладку', click: () => {
+        if (chromeView && !chromeView.webContents.isDestroyed()) {
+          chromeView.webContents.send('tab-close-request', tabId)
+        }
+      }},
+    ])
+    menu.popup({ window: mainWindow })
+  })
+
+  // ============ Warning страница ============
+  ipcMain.handle('warning-go-back', () => {
+    const wc = getActiveTab()?.view?.webContents
+    if (wc?.canGoBack()) wc.goBack()
+    else goHomeInActiveTab()
+  })
+
+  ipcMain.handle('warning-proceed', (_e, targetUrl) => {
+    try {
+      const parsed = new URL(targetUrl)
+      if (parsed.protocol === 'http:') {
+        allowedInsecureHosts.add(parsed.hostname)
+      }
+    } catch {}
+    const tab = getActiveTab()
+    if (tab) {
+      tab.isWarningPage = false
+      tab.view.webContents.loadURL(targetUrl)
+    }
+  })
+
+  // ============ Error страница ============
+  ipcMain.handle('error-retry', () => {
+    const tab = getActiveTab()
+    if (!tab || !tab.isErrorPage) return
+    if (tab.errorUrl) {
+      tab.isErrorPage = false
+      tab.view.webContents.loadURL(tab.errorUrl)
+    } else {
+      tab.view.webContents.reload()
+    }
+  })
+  ipcMain.handle('error-go-back', () => {
+    const wc = getActiveTab()?.view?.webContents
+    if (wc?.canGoBack()) wc.goBack()
+    else goHomeInActiveTab()
+  })
+  ipcMain.handle('error-go-home', () => goHomeInActiveTab())
+
+  ipcMain.handle('error-proceed-anyway', (_e, targetUrl) => {
+    if (!targetUrl) return
+    try {
+      const parsed = new URL(targetUrl)
+      allowedBadCertHosts.add(parsed.hostname)
+      debugLog('Security', `Пользователь разрешил небезопасный сертификат: ${parsed.hostname}`)
+    } catch {}
+    const tab = getActiveTab()
+    if (tab) {
+      tab.isErrorPage = false
+      tab.view.webContents.loadURL(targetUrl)
+    }
+  })
+
+  // ============ Поиск по странице ============
+  ipcMain.handle('find-in-page', (_e, text, options = {}) => {
+    const tab = getActiveTab()
+    if (!tab || !tab.view) return
+    if (!text) {
+      tab.view.webContents.stopFindInPage('clearSelection')
+      return
+    }
+    tab.view.webContents.findInPage(text, {
+      forward: options.forward !== false,
+      findNext: !!options.findNext,
+      matchCase: false,
+    })
+  })
+
+  ipcMain.handle('stop-find-in-page', () => {
+    const tab = getActiveTab()
+    if (!tab || !tab.view) return
+    tab.view.webContents.stopFindInPage('clearSelection')
+  })
+
   ipcMain.on('scroll-state', (_e, isScrolled) => {
     if (!chromeView) return
     chromeView.webContents.send('scroll-state', !!isScrolled)
@@ -1189,14 +1600,13 @@ app.whenReady().then(() => {
     }
   })
 
-  // ============ Настройки / Тема / Акцент ============
+  // ============ Настройки ============
   ipcMain.handle('get-settings', () => ({
     ...settingsCache,
     resolvedTheme: getResolvedTheme(),
+    resolvedDownloadPath: getDefaultDownloadPath(),
   }))
-
   ipcMain.handle('get-theme', () => getResolvedTheme())
-
   ipcMain.handle('set-theme', (_e, theme) => {
     if (!['light', 'dark', 'system'].includes(theme)) return settingsCache
     settingsCache.theme = theme
@@ -1204,10 +1614,8 @@ app.whenReady().then(() => {
     broadcastTheme()
     return { ...settingsCache, resolvedTheme: getResolvedTheme() }
   })
-
   ipcMain.handle('get-accent', () => getAccentData())
   ipcMain.handle('get-accent-options', () => getAccentOptions())
-
   ipcMain.handle('set-accent', (_e, name) => {
     if (!ACCENT_COLORS[name]) return getAccentData()
     settingsCache.accent = name
@@ -1215,7 +1623,6 @@ app.whenReady().then(() => {
     broadcastAccent()
     return getAccentData()
   })
-
   ipcMain.handle('get-app-info', () => ({
     name: 'Browser Project',
     version: app.getVersion(),
@@ -1225,15 +1632,92 @@ app.whenReady().then(() => {
     platform: process.platform,
   }))
 
+  // ============ Загрузки ============
+  ipcMain.handle('get-downloads', () => downloadsCache.slice())
+  ipcMain.handle('get-downloads-path', () => ({
+    path: getDefaultDownloadPath(),
+    askWhereToSave: !!settingsCache.askWhereToSave,
+    isDefault: !settingsCache.downloadPath,
+  }))
+  ipcMain.handle('set-downloads-path', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Выберите папку для загрузок',
+      defaultPath: getDefaultDownloadPath(),
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (result.canceled || !result.filePaths.length) {
+      return { path: getDefaultDownloadPath(), askWhereToSave: !!settingsCache.askWhereToSave, isDefault: !settingsCache.downloadPath }
+    }
+    settingsCache.downloadPath = result.filePaths[0]
+    saveSettings()
+    return { path: getDefaultDownloadPath(), askWhereToSave: !!settingsCache.askWhereToSave, isDefault: false }
+  })
+  ipcMain.handle('reset-downloads-path', () => {
+    settingsCache.downloadPath = ''
+    saveSettings()
+    return { path: getDefaultDownloadPath(), askWhereToSave: !!settingsCache.askWhereToSave, isDefault: true }
+  })
+  ipcMain.handle('set-ask-where-to-save', (_e, value) => {
+    settingsCache.askWhereToSave = !!value
+    saveSettings()
+    return { path: getDefaultDownloadPath(), askWhereToSave: !!settingsCache.askWhereToSave, isDefault: !settingsCache.downloadPath }
+  })
+  ipcMain.handle('open-downloaded-file', async (_e, id) => {
+    const entry = downloadsCache.find(d => d.id === id)
+    if (!entry) return { ok: false, error: 'Запись не найдена' }
+    if (!fs.existsSync(entry.savePath)) return { ok: false, error: 'Файл не найден на диске' }
+    const err = await shell.openPath(entry.savePath)
+    if (err) return { ok: false, error: err }
+    return { ok: true }
+  })
+  ipcMain.handle('show-downloaded-in-folder', (_e, id) => {
+    const entry = downloadsCache.find(d => d.id === id)
+    if (!entry) return { ok: false, error: 'Запись не найдена' }
+    if (!fs.existsSync(entry.savePath)) return { ok: false, error: 'Файл не найден на диске' }
+    shell.showItemInFolder(entry.savePath)
+    return { ok: true }
+  })
+  ipcMain.handle('remove-download-entry', (_e, id) => {
+    const idx = downloadsCache.findIndex(d => d.id === id)
+    if (idx < 0) return downloadsCache.slice()
+    const item = activeDownloads.get(id)
+    if (item) { try { item.cancel() } catch (e) {}; activeDownloads.delete(id) }
+    downloadsCache.splice(idx, 1)
+    saveDownloads()
+    broadcastDownloads()
+    broadcastDownloadActiveCount()
+    return downloadsCache.slice()
+  })
+  ipcMain.handle('clear-downloads-list', () => {
+    downloadsCache = downloadsCache.filter(d => d.state === 'progressing' || d.state === 'paused')
+    saveDownloads()
+    broadcastDownloads()
+    broadcastDownloadActiveCount()
+    return downloadsCache.slice()
+  })
+  ipcMain.handle('delete-downloaded-file', async (_e, id) => {
+    const entry = downloadsCache.find(d => d.id === id)
+    if (!entry) return { ok: false, error: 'Запись не найдена' }
+    try {
+      if (fs.existsSync(entry.savePath)) await shell.trashItem(entry.savePath)
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+    const idx = downloadsCache.findIndex(d => d.id === id)
+    if (idx >= 0) downloadsCache.splice(idx, 1)
+    saveDownloads()
+    broadcastDownloads()
+    broadcastDownloadActiveCount()
+    return { ok: true, downloads: downloadsCache.slice() }
+  })
+
   // ============ Библиотека ============
   ipcMain.handle('get-library', () => serializeLibrary())
-
   ipcMain.handle('bookmark-current-page', () => {
     const active = getActiveTab()
     if (!active) return serializeLibrary()
     const url = active.view.webContents.getURL()
     if (!url || isInternalUrl(url)) return serializeLibrary()
-
     const idx = bookmarksCache.findIndex(b => b.url === url)
     if (idx >= 0) bookmarksCache.splice(idx, 1)
     else {
@@ -1244,13 +1728,11 @@ app.whenReady().then(() => {
         createdAt: Date.now(), folderId: null,
       })
     }
-
     saveBookmarks()
     updateChromeHeightForBookmarks()
     broadcastLibrary()
     return serializeLibrary()
   })
-
   ipcMain.handle('remove-bookmark', (_e, id) => {
     const idx = bookmarksCache.findIndex(b => b.id === id)
     if (idx < 0) return serializeLibrary()
@@ -1260,7 +1742,6 @@ app.whenReady().then(() => {
     broadcastLibrary()
     return serializeLibrary()
   })
-
   ipcMain.handle('rename-bookmark', (_e, id, newTitle) => {
     const bm = bookmarksCache.find(b => b.id === id)
     if (!bm) return serializeLibrary()
@@ -1269,7 +1750,6 @@ app.whenReady().then(() => {
     broadcastLibrary()
     return serializeLibrary()
   })
-
   ipcMain.handle('update-bookmark', (_e, payload) => {
     const { id, title, url } = payload || {}
     const bm = bookmarksCache.find(b => b.id === id)
@@ -1284,7 +1764,6 @@ app.whenReady().then(() => {
     broadcastLibrary()
     return serializeLibrary()
   })
-
   ipcMain.handle('move-bookmark', (_e, payload) => {
     const { id, folderId } = payload || {}
     const bm = bookmarksCache.find(b => b.id === id)
@@ -1296,17 +1775,15 @@ app.whenReady().then(() => {
     broadcastLibrary()
     return serializeLibrary()
   })
-
   ipcMain.handle('open-bookmark-in-new-tab', (_e, id) => {
     const bm = bookmarksCache.find(b => b.id === id)
     if (!bm) return
     createTab(bm.url)
   })
-
   ipcMain.handle('open-bookmarks-manager', () => openBookmarksManager())
   ipcMain.handle('open-history-manager', () => openHistoryManager())
   ipcMain.handle('open-settings-page', () => openSettingsPage())
-
+  ipcMain.handle('open-downloads-page', () => openDownloadsPage())
   ipcMain.handle('clear-all-bookmarks', () => {
     bookmarksCache = []
     foldersCache = []
@@ -1315,7 +1792,6 @@ app.whenReady().then(() => {
     broadcastLibrary()
     return serializeLibrary()
   })
-
   ipcMain.handle('show-bookmark-menu', (_e, id) => {
     const bm = bookmarksCache.find(b => b.id === id)
     if (!bm) return
@@ -1335,7 +1811,6 @@ app.whenReady().then(() => {
     ])
     menu.popup({ window: mainWindow })
   })
-
   ipcMain.handle('show-folder-menu', (_e, folderId) => {
     const folder = foldersCache.find(f => f.id === folderId)
     if (!folder) return
@@ -1348,10 +1823,8 @@ app.whenReady().then(() => {
         }))
     Menu.buildFromTemplate(template).popup({ window: mainWindow })
   })
-
   ipcMain.handle('open-bookmark-popup', (_e, payload) => openBookmarkPopup(payload))
   ipcMain.handle('close-bookmark-popup', () => closeBookmarkPopup())
-
   ipcMain.handle('popup-save', (_e, { bookmarkId, title }) => {
     if (bookmarkId) {
       const bm = bookmarksCache.find(b => b.id === bookmarkId)
@@ -1360,7 +1833,6 @@ app.whenReady().then(() => {
     closeBookmarkPopup()
     return serializeLibrary()
   })
-
   ipcMain.handle('popup-remove', (_e, { bookmarkId }) => {
     if (bookmarkId) {
       const idx = bookmarksCache.findIndex(b => b.id === bookmarkId)
@@ -1374,8 +1846,6 @@ app.whenReady().then(() => {
     closeBookmarkPopup()
     return serializeLibrary()
   })
-
-  // ============ Папки ============
   ipcMain.handle('create-folder', (_e, name) => {
     const trimmed = String(name || '').trim()
     if (!trimmed) return serializeLibrary()
@@ -1388,7 +1858,6 @@ app.whenReady().then(() => {
     broadcastLibrary()
     return serializeLibrary()
   })
-
   ipcMain.handle('rename-folder', (_e, payload) => {
     const { id, name } = payload || {}
     const f = foldersCache.find(x => x.id === id)
@@ -1399,7 +1868,6 @@ app.whenReady().then(() => {
     broadcastLibrary()
     return serializeLibrary()
   })
-
   ipcMain.handle('delete-folder', (_e, id) => {
     const idx = foldersCache.findIndex(x => x.id === id)
     if (idx < 0) return serializeLibrary()
@@ -1436,9 +1904,7 @@ app.whenReady().then(() => {
 
   // ============ Подсказки ============
   ipcMain.handle('get-suggestions', async (_e, query) => {
-    debugLog('Suggestions', `Запрос: "${query}"`)
-    const items = await fetchSuggestions(query)
-    return items
+    return await fetchSuggestions(query)
   })
 })
 

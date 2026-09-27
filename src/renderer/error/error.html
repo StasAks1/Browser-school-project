@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('browser-resolved-theme');
+        document.documentElement.dataset.theme = (t === 'light') ? 'light' : 'dark';
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    })();
+  </script>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'none';">
+  <title>Не удалось открыть страницу</title>
+  <link rel="stylesheet" href="error.css">
+</head>
+<body>
+  <div class="page">
+    <div class="error-icon" id="error-icon">⚠️</div>
+    <h1 class="error-title" id="error-title">Не удалось открыть страницу</h1>
+    <p class="error-description" id="error-description">
+      Проверьте подключение к интернету и попробуйте снова.
+    </p>
+    <div class="error-url" id="error-url"></div>
+    <div class="error-code" id="error-code"></div>
+    <div class="error-actions">
+      <button id="btn-retry" class="btn btn-primary">Перезагрузить</button>
+      <button id="btn-proceed" class="btn btn-warning" style="display: none;">Всё равно перейти</button>
+      <button id="btn-home" class="btn btn-secondary">На главную</button>
+    </div>
+  </div>
+  <script src="error.js"></script>
+</body>
+</html>

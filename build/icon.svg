@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Фон: чуть светлее, менее скруглённый -->
+  <rect x="0" y="0" width="1024" height="1024" rx="140" ry="140" fill="#1a1a1a"/>
+
+  <!-- Курсивная S — золотая -->
+  <path d="M 350 340
+           C 450 300, 560 340, 560 410
+           C 560 460, 500 490, 440 500
+           C 380 510, 320 550, 320 620
+           C 320 700, 400 740, 500 740
+           C 580 740, 640 700, 660 640"
+        fill="none" stroke="#d4af37" stroke-width="50"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Курсивная A — золотая -->
+  <path d="M 490 740
+           C 520 620, 590 420, 650 380
+           C 690 355, 730 380, 745 450
+           C 755 520, 745 620, 730 700
+           C 720 745, 740 760, 770 745"
+        fill="none" stroke="#d4af37" stroke-width="50"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Перекладина у A -->
+  <path d="M 550 590 C 610 565, 690 565, 745 590"
+        fill="none" stroke="#d4af37" stroke-width="50"
+        stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('browser-resolved-theme');
+        document.documentElement.dataset.theme = (t === 'light') ? 'light' : 'dark';
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    })();
+  </script>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'none';">
+  <title>Соединение не защищено</title>
+  <link rel="stylesheet" href="warning.css">
+</head>
+<body>
+  <div class="page">
+    <div class="warning-icon">⚠️</div>
+    <h1 class="warning-title">Подключение не защищено</h1>
+    <p class="warning-description">
+      Сайт использует незашифрованное соединение <strong>HTTP</strong>. Данные, которые вы вводите
+      (пароли, сообщения, номера карт), могут быть перехвачены третьими лицами.
+    </p>
+    <div class="warning-url" id="warning-url"></div>
+    <div class="warning-actions">
+      <button id="btn-back" class="btn btn-primary">Назад в безопасность</button>
+      <button id="btn-proceed" class="btn btn-secondary">Всё равно перейти</button>
+    </div>
+    <div class="warning-hint">
+      Если вы доверяете этому сайту (например, это локальный сервер), нажмите «Всё равно перейти».
+      Решение запомнится на эту сессию.
+    </div>
+  </div>
+  <script src="warning.js"></script>
+</body>
+</html>

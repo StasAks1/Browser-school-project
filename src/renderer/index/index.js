@@ -6,14 +6,18 @@ const btnReload = document.getElementById('btn-reload')
 const btnHome = document.getElementById('btn-home')
 const btnHistory = document.getElementById('btn-history')
 const btnSettings = document.getElementById('btn-settings')
+const btnDownloads = document.getElementById('btn-downloads')
+const downloadsBadge = document.getElementById('downloads-badge')
 const btnStar = document.getElementById('btn-star')
 const tabsContainer = document.getElementById('tabs')
 const btnNewTab = document.getElementById('new-tab-btn')
 const bookmarksContainer = document.getElementById('bookmarks')
 const btnBookmarksManager = document.getElementById('btn-bookmarks-manager')
+const securityIndicator = document.getElementById('security-indicator')
 
 let tabsState = []
 let library = { bookmarks: [], folders: [] }
+let activeDownloadCount = 0
 const renderedTabIds = new Set()
 const closingTabIds = new Set()
 
@@ -33,6 +37,36 @@ window.browserAPI.onAccentChanged((data) => applyAccent(data))
 window.browserAPI.getTheme().then((theme) => applyTheme(theme))
 window.browserAPI.getAccent().then((data) => applyAccent(data))
 
+// ============ Индикатор безопасности ============
+function setSecurityState(state) {
+  securityIndicator.dataset.state = state || 'unknown'
+
+  const titles = {
+    secure: 'Соединение защищено (HTTPS)',
+    insecure: 'Соединение не защищено (HTTP)',
+    internal: 'Внутренняя страница браузера',
+    unknown: 'Состояние соединения неизвестно',
+  }
+  securityIndicator.title = titles[state] || titles.unknown
+}
+
+window.browserAPI.onSecurityState((state) => setSecurityState(state))
+window.browserAPI.getSecurityState().then((state) => setSecurityState(state))
+
+// ============ Загрузки: счётчик ============
+function updateDownloadsBadge(count) {
+  activeDownloadCount = count
+  if (count > 0) {
+    downloadsBadge.textContent = count > 9 ? '9+' : String(count)
+    downloadsBadge.style.display = 'flex'
+  } else {
+    downloadsBadge.textContent = ''
+    downloadsBadge.style.display = 'none'
+  }
+}
+
+window.browserAPI.onDownloadActiveCount((count) => updateDownloadsBadge(count))
+
 // ============ Адресная строка ============
 form.addEventListener('submit', (e) => {
   e.preventDefault()
@@ -49,12 +83,12 @@ btnReload.addEventListener('click', () => window.browserAPI.reload())
 btnHome.addEventListener('click', () => window.browserAPI.goHome())
 btnHistory.addEventListener('click', () => window.browserAPI.openHistoryManager())
 btnSettings.addEventListener('click', () => window.browserAPI.openSettingsPage())
+btnDownloads.addEventListener('click', () => window.browserAPI.openDownloadsPage())
 btnBookmarksManager.addEventListener('click', () => window.browserAPI.openBookmarksManager())
 
 btnStar.addEventListener('click', async () => {
   const url = input.value.trim()
   if (!url) return
-
   let existing = library.bookmarks.find((b) => b.url === url)
   if (!existing) {
     library = await window.browserAPI.bookmarkCurrentPage()
@@ -63,7 +97,6 @@ btnStar.addEventListener('click', async () => {
     updateStarState()
   }
   if (!existing) return
-
   const rect = btnStar.getBoundingClientRect()
   window.browserAPI.openBookmarkPopup({
     rect: { right: rect.right, bottom: rect.bottom },
@@ -95,6 +128,10 @@ window.browserAPI.onLibraryUpdated((payload) => {
   library = payload || { bookmarks: [], folders: [] }
   renderBookmarks()
   updateStarState()
+})
+
+window.browserAPI.onTabCloseRequest((id) => {
+  animateCloseTab(id)
 })
 
 function getInitial(title) {
@@ -170,6 +207,12 @@ function renderTabs() {
 
     el.addEventListener('auxclick', (e) => {
       if (e.button === 1) { e.preventDefault(); animateCloseTab(tab.id) }
+    })
+
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      window.browserAPI.showTabMenu(tab.id)
     })
 
     tabsContainer.appendChild(el)
@@ -320,11 +363,153 @@ window.browserAPI.getLibrary().then((data) => {
   updateStarState()
 })
 
+window.browserAPI.getDownloads().then((list) => {
+  const active = (list || []).filter(d => d.state === 'progressing' || d.state === 'paused').length
+  updateDownloadsBadge(active)
+})
+
+// ============================================================
+// ============ Поиск по странице (Cmd+F / Ctrl+F) ============
+// ============================================================
+const findBar = document.getElementById('find-bar')
+const findInput = document.getElementById('find-input')
+const findCounter = document.getElementById('find-counter')
+const btnFind = document.getElementById('btn-find')
+const findPrev = document.getElementById('find-prev')
+const findNext = document.getElementById('find-next')
+const findClose = document.getElementById('find-close')
+
+let findVisible = false
+let lastFindText = ''
+
+function openFindBar() {
+  findVisible = true
+  findBar.classList.add('visible')
+  setTimeout(() => {
+    findInput.focus()
+    findInput.select()
+  }, 30)
+}
+
+function closeFindBar() {
+  if (!findVisible) return
+  findVisible = false
+  findBar.classList.remove('visible')
+  findInput.value = ''
+  findCounter.textContent = ''
+  lastFindText = ''
+  window.browserAPI.stopFindInPage()
+}
+
+// Открытие из кнопки в тулбаре
+btnFind.addEventListener('click', () => {
+  if (findVisible) closeFindBar()
+  else openFindBar()
+})
+
+// Закрытие по крестику
+findClose.addEventListener('click', closeFindBar)
+
+// Навигация по совпадениям — findNext: true
+findNext.addEventListener('click', () => {
+  const text = findInput.value
+  if (!text) return
+  window.browserAPI.findInPage(text, { forward: true, findNext: true })
+})
+
+findPrev.addEventListener('click', () => {
+  const text = findInput.value
+  if (!text) return
+  window.browserAPI.findInPage(text, { forward: false, findNext: true })
+})
+
+// Ввод текста — новый поиск
+let findDebounce = null
+findInput.addEventListener('input', () => {
+  const text = findInput.value
+  clearTimeout(findDebounce)
+
+  if (!text) {
+    findCounter.textContent = ''
+    lastFindText = ''
+    window.browserAPI.stopFindInPage()
+    return
+  }
+
+  findDebounce = setTimeout(() => {
+    lastFindText = text
+    window.browserAPI.findInPage(text, { forward: true, findNext: false })
+  }, 150)
+})
+
+// Enter / Shift+Enter / Esc в поле поиска
+findInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    const text = findInput.value
+    if (!text) return
+    if (text === lastFindText) {
+      window.browserAPI.findInPage(text, { forward: !e.shiftKey, findNext: true })
+    } else {
+      lastFindText = text
+      window.browserAPI.findInPage(text, { forward: !e.shiftKey, findNext: false })
+    }
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    closeFindBar()
+  }
+})
+
+// Результаты поиска из main-процесса
+window.browserAPI.onFindResult((result) => {
+  if (!findVisible) return
+  const { matches, activeMatch } = result || { matches: 0, activeMatch: 0 }
+
+  if (matches === 0) {
+    findCounter.textContent = '0/0'
+    findCounter.style.color = '#ef4444'
+  } else {
+    findCounter.textContent = `${activeMatch}/${matches}`
+    findCounter.style.color = ''
+  }
+})
+
+// Сигнал из main: открыть панель (Cmd+F при фокусе на странице)
+window.browserAPI.onOpenFindBar(() => {
+  if (findVisible) {
+    findInput.focus()
+    findInput.select()
+  } else {
+    openFindBar()
+  }
+})
+
+// Горячая клавиша Cmd+F / Ctrl+F, когда фокус в chromeView
+document.addEventListener('keydown', (e) => {
+  const mod = e.metaKey || e.ctrlKey
+  if (!mod) return
+
+  if (e.key === 'f' || e.key === 'F') {
+    e.preventDefault()
+    if (findVisible) {
+      findInput.focus()
+      findInput.select()
+    } else {
+      openFindBar()
+    }
+  }
+})
+
+// ============ Остальные горячие клавиши ============
 document.addEventListener('keydown', (e) => {
   const meta = e.metaKey || e.ctrlKey
   if (!meta) return
 
-  if (e.key === 't') { e.preventDefault(); window.browserAPI.createTab() }
+  if (e.key === 't' && !e.shiftKey) { e.preventDefault(); window.browserAPI.createTab() }
+  if (e.key === 'T' || (e.key === 't' && e.shiftKey)) {
+    e.preventDefault()
+    window.browserAPI.restoreClosedTab()
+  }
   if (e.key === 'w') {
     e.preventDefault()
     const active = tabsState.find((t) => t.isActive)
@@ -332,6 +517,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.key === 'l') { e.preventDefault(); input.focus(); input.select() }
   if (e.key === 'd') { e.preventDefault(); btnStar.click() }
+  if (e.key === 'j') { e.preventDefault(); window.browserAPI.openDownloadsPage() }
   if (e.key === 'y') { e.preventDefault(); window.browserAPI.openHistoryManager() }
   if (e.key === ',') { e.preventDefault(); window.browserAPI.openSettingsPage() }
   if (e.key === 'o' && e.shiftKey) { e.preventDefault(); window.browserAPI.openBookmarksManager() }

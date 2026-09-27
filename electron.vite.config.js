@@ -21,9 +21,12 @@ export default defineConfig({
           startpage: resolve(__dirname, 'src/renderer/startpage/startpage.html'),
           bookmarks: resolve(__dirname, 'src/renderer/bookmarks/bookmarks.html'),
           history: resolve(__dirname, 'src/renderer/history/history.html'),
+          settings: resolve(__dirname, 'src/renderer/settings/settings.html'),
+          downloads: resolve(__dirname, 'src/renderer/downloads/downloads.html'),
+          error: resolve(__dirname, 'src/renderer/error/error.html'),
+          warning: resolve(__dirname, 'src/renderer/warning/warning.html'),
           popup: resolve(__dirname, 'src/renderer/popup/popup.html'),
-          permission: resolve(__dirname, 'src/renderer/permission/permission.html'),
-          settings: resolve(__dirname, 'src/renderer/settings/settings.html')
+          permission: resolve(__dirname, 'src/renderer/permission/permission.html')
         }
       }
     }

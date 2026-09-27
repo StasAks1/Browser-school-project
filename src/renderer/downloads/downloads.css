@@ -1,0 +1,327 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root,
+[data-theme="dark"] {
+  --bg: #1a1a1a;
+  --bg-card: #232323;
+  --bg-hover: #2a2a2a;
+  --border: #333;
+  --text: #f0f0f0;
+  --text-muted: #888;
+  --accent: #de5833;
+  --accent-hover: #c94a28;
+  --danger: #e5484d;
+  --progress-track: #333;
+  --progress-fill: #de5833;
+  --item-favicon-bg: #2f2f2f;
+  --item-btn-hover: #383838;
+}
+
+[data-theme="light"] {
+  --bg: #f5f5f7;
+  --bg-card: #ffffff;
+  --bg-hover: #f0f0f0;
+  --border: #dcdcdc;
+  --text: #1a1a1a;
+  --text-muted: #6b6b6b;
+  --accent: #de5833;
+  --accent-hover: #c94a28;
+  --danger: #e5484d;
+  --progress-track: #e8e8e8;
+  --progress-fill: #de5833;
+  --item-favicon-bg: #e8e8e8;
+  --item-btn-hover: #e0e0e0;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.header { margin-bottom: 20px; flex-shrink: 0; }
+
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.title { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+
+.btn-clear {
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.btn-clear:hover { background: var(--bg-hover); color: var(--text); }
+
+.search-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 0.15s ease;
+}
+.search-wrapper:focus-within { border-color: var(--accent); }
+
+.search-icon { width: 16px; height: 16px; color: var(--text-muted); flex-shrink: 0; }
+
+.search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+}
+.search-input::placeholder { color: var(--text-muted); }
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 8px;
+  margin-right: -8px;
+}
+.content::-webkit-scrollbar { width: 8px; }
+.content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* ============ Группа по дате ============ */
+.date-group {
+  margin-bottom: 22px;
+  animation: groupIn 0.25s ease-out;
+}
+@keyframes groupIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.date-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding-left: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.date-count {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border-radius: 4px;
+  padding: 2px 6px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ============ Карточка загрузки ============ */
+.download-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border-radius: 10px;
+  margin-bottom: 4px;
+  transition: background 0.12s ease;
+  border: 1px solid transparent;
+  animation: itemIn 0.2s ease-out;
+}
+@keyframes itemIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+.download-item:hover { background: var(--bg-hover); border-color: var(--border); }
+
+/* Иконка файла */
+.download-icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--item-favicon-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--text-muted);
+}
+.download-icon svg { width: 20px; height: 20px; }
+.download-icon.type-image svg { color: #a855f7; }
+.download-icon.type-video svg { color: #ec4899; }
+.download-icon.type-audio svg { color: #22c55e; }
+.download-icon.type-pdf svg { color: #ef4444; }
+.download-icon.type-archive svg { color: #f59e0b; }
+.download-icon.type-doc svg { color: #3b82f6; }
+.download-icon.type-code svg { color: #06b6d4; }
+.download-icon.type-app svg { color: #64748b; }
+
+/* Тело карточки */
+.download-body { flex: 1; min-width: 0; }
+
+.download-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.download-meta .meta-dot {
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.download-url {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+  opacity: 0.7;
+}
+
+/* Прогресс-бар */
+.download-progress {
+  margin-top: 8px;
+  height: 4px;
+  background: var(--progress-track);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.download-progress-fill {
+  height: 100%;
+  background: var(--progress-fill);
+  border-radius: 2px;
+  transition: width 0.3s ease, background-color 0.2s ease;
+  width: 0%;
+}
+
+.download-item.state-completed .download-progress { display: none; }
+.download-item.state-cancelled .download-progress-fill { background: var(--text-muted); }
+.download-item.state-interrupted .download-progress-fill { background: var(--danger); }
+
+/* Статус */
+.download-status {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.download-item.state-completed .download-status { color: #22c55e; }
+.download-item.state-interrupted .download-status { color: var(--danger); }
+.download-item.state-cancelled .download-status { color: var(--text-muted); opacity: 0.6; }
+
+/* Действия */
+.download-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  flex-shrink: 0;
+}
+.download-item:hover .download-actions { opacity: 1; }
+
+.item-btn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.item-btn:hover { background: var(--item-btn-hover); color: var(--text); }
+.item-btn.danger:hover { background: rgba(229, 72, 77, 0.15); color: var(--danger); }
+.item-btn svg { width: 15px; height: 15px; }
+
+/* ============ Пустое состояние ============ */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty-icon { font-size: 56px; margin-bottom: 16px; opacity: 0.5; }
+.empty-title { font-size: 18px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.empty-subtitle { font-size: 13px; max-width: 340px; line-height: 1.5; }
+
+/* ============ Toast ============ */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  padding: 10px 20px;
+  background: #2a2a2a;
+  color: #f0f0f0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  font-size: 13px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4);
+  transition: transform 0.25s ease, opacity 0.25s ease;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1000;
+}
+.toast.visible {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+[data-theme="light"] .toast {
+  background: #ffffff;
+  color: #1a1a1a;
+  border-color: #dcdcdc;
+}
