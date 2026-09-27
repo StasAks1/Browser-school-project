@@ -59,6 +59,17 @@ html, body {
   -webkit-app-region: drag; flex-shrink: 0;
 }
 
+/* Windows: место для системных кнопок (─ □ ✕) справа */
+body[data-platform="win32"] .tab-strip {
+  padding-left: 8px;
+  padding-right: 140px;
+}
+
+/* Linux: системный заголовок, светофоров нет — убираем левый отступ */
+body[data-platform="linux"] .tab-strip {
+  padding-left: 8px;
+}
+
 .tabs-container {
   display: flex; align-items: center; gap: 6px;
   flex: 0 1 auto; height: 28px; overflow: hidden;
@@ -348,7 +359,7 @@ body:not(.has-bookmarks) .bookmarks-manager-btn { display: none; }
 /* ============ Панель поиска по странице (Cmd+F) ============ */
 .find-bar {
   position: absolute;
-  top: 48px;      /* 44px (высота tab-strip) + 4px отступ */
+  top: 48px;
   right: 14px;
   z-index: 500;
   display: none;

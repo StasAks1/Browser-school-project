@@ -28,6 +28,24 @@
           </svg>
           <input type="text" id="search-input" class="search-input" placeholder="Поиск по названию или адресу..." autocomplete="off">
         </div>
+        <div class="header-actions">
+          <button type="button" id="btn-import" class="header-btn" title="Импорт закладок из HTML">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <path d="M17 8l-5-5-5 5"/>
+              <path d="M12 3v12"/>
+            </svg>
+            <span>Импорт</span>
+          </button>
+          <button type="button" id="btn-export" class="header-btn" title="Экспорт закладок в HTML">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <path d="M7 10l5 5 5-5"/>
+              <path d="M12 15V3"/>
+            </svg>
+            <span>Экспорт</span>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -46,7 +64,6 @@
     </div>
   </div>
 
-  <!-- Модалка редактирования закладки -->
   <div id="edit-modal" class="modal-overlay">
     <div class="modal">
       <h2 class="modal-title">Редактировать закладку</h2>
@@ -67,7 +84,6 @@
     </div>
   </div>
 
-  <!-- Модалка создания/переименования папки -->
   <div id="folder-modal" class="modal-overlay">
     <div class="modal">
       <h2 class="modal-title" id="folder-modal-title">Новая папка</h2>
@@ -84,7 +100,6 @@
     </div>
   </div>
 
-  <!-- Модалка перемещения закладки -->
   <div id="move-modal" class="modal-overlay">
     <div class="modal">
       <h2 class="modal-title">Переместить в папку</h2>
@@ -95,6 +110,9 @@
     </div>
   </div>
 
+  <div id="toast" class="toast"></div>
+
+  <script src="../shared/theme.js"></script>
   <script src="bookmarks.js"></script>
 </body>
 </html>

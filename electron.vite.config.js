@@ -23,6 +23,8 @@ export default defineConfig({
           history: resolve(__dirname, 'src/renderer/history/history.html'),
           settings: resolve(__dirname, 'src/renderer/settings/settings.html'),
           downloads: resolve(__dirname, 'src/renderer/downloads/downloads.html'),
+          cookies: resolve(__dirname, 'src/renderer/cookies/cookies.html'),
+          statusbar: resolve(__dirname, 'src/renderer/statusbar/statusbar.html'),
           error: resolve(__dirname, 'src/renderer/error/error.html'),
           warning: resolve(__dirname, 'src/renderer/warning/warning.html'),
           popup: resolve(__dirname, 'src/renderer/popup/popup.html'),

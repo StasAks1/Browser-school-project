@@ -21,21 +21,10 @@ let activeDownloadCount = 0
 const renderedTabIds = new Set()
 const closingTabIds = new Set()
 
-// ============ Тема и акцент ============
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark'
-}
-
-function applyAccent(data) {
-  if (!data) return
-  document.documentElement.style.setProperty('--accent', data.color)
-  document.documentElement.style.setProperty('--accent-hover', data.hover)
-}
-
-window.browserAPI.onThemeChanged((theme) => applyTheme(theme))
-window.browserAPI.onAccentChanged((data) => applyAccent(data))
-window.browserAPI.getTheme().then((theme) => applyTheme(theme))
-window.browserAPI.getAccent().then((data) => applyAccent(data))
+// ============ Определение платформы ============
+window.browserAPI.getPlatform().then((platform) => {
+  document.body.dataset.platform = platform || 'unknown'
+})
 
 // ============ Индикатор безопасности ============
 function setSecurityState(state) {
@@ -401,16 +390,13 @@ function closeFindBar() {
   window.browserAPI.stopFindInPage()
 }
 
-// Открытие из кнопки в тулбаре
 btnFind.addEventListener('click', () => {
   if (findVisible) closeFindBar()
   else openFindBar()
 })
 
-// Закрытие по крестику
 findClose.addEventListener('click', closeFindBar)
 
-// Навигация по совпадениям — findNext: true
 findNext.addEventListener('click', () => {
   const text = findInput.value
   if (!text) return
@@ -423,7 +409,6 @@ findPrev.addEventListener('click', () => {
   window.browserAPI.findInPage(text, { forward: false, findNext: true })
 })
 
-// Ввод текста — новый поиск
 let findDebounce = null
 findInput.addEventListener('input', () => {
   const text = findInput.value
@@ -442,7 +427,6 @@ findInput.addEventListener('input', () => {
   }, 150)
 })
 
-// Enter / Shift+Enter / Esc в поле поиска
 findInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault()
@@ -460,7 +444,6 @@ findInput.addEventListener('keydown', (e) => {
   }
 })
 
-// Результаты поиска из main-процесса
 window.browserAPI.onFindResult((result) => {
   if (!findVisible) return
   const { matches, activeMatch } = result || { matches: 0, activeMatch: 0 }
@@ -474,7 +457,6 @@ window.browserAPI.onFindResult((result) => {
   }
 })
 
-// Сигнал из main: открыть панель (Cmd+F при фокусе на странице)
 window.browserAPI.onOpenFindBar(() => {
   if (findVisible) {
     findInput.focus()
@@ -484,41 +466,25 @@ window.browserAPI.onOpenFindBar(() => {
   }
 })
 
-// Горячая клавиша Cmd+F / Ctrl+F, когда фокус в chromeView
-document.addEventListener('keydown', (e) => {
-  const mod = e.metaKey || e.ctrlKey
-  if (!mod) return
-
-  if (e.key === 'f' || e.key === 'F') {
-    e.preventDefault()
-    if (findVisible) {
-      findInput.focus()
-      findInput.select()
-    } else {
-      openFindBar()
-    }
-  }
+// ============================================================
+// ============ Хоткеи из main-процесса =======================
+// ============================================================
+window.browserAPI.onShortcutCloseTab(() => {
+  const active = tabsState.find((t) => t.isActive)
+  if (active) animateCloseTab(active.id)
 })
 
-// ============ Остальные горячие клавиши ============
-document.addEventListener('keydown', (e) => {
-  const meta = e.metaKey || e.ctrlKey
-  if (!meta) return
-
-  if (e.key === 't' && !e.shiftKey) { e.preventDefault(); window.browserAPI.createTab() }
-  if (e.key === 'T' || (e.key === 't' && e.shiftKey)) {
-    e.preventDefault()
-    window.browserAPI.restoreClosedTab()
-  }
-  if (e.key === 'w') {
-    e.preventDefault()
-    const active = tabsState.find((t) => t.isActive)
-    if (active) animateCloseTab(active.id)
-  }
-  if (e.key === 'l') { e.preventDefault(); input.focus(); input.select() }
-  if (e.key === 'd') { e.preventDefault(); btnStar.click() }
-  if (e.key === 'j') { e.preventDefault(); window.browserAPI.openDownloadsPage() }
-  if (e.key === 'y') { e.preventDefault(); window.browserAPI.openHistoryManager() }
-  if (e.key === ',') { e.preventDefault(); window.browserAPI.openSettingsPage() }
-  if (e.key === 'o' && e.shiftKey) { e.preventDefault(); window.browserAPI.openBookmarksManager() }
+window.browserAPI.onShortcutFocusAddress(() => {
+  input.focus()
+  input.select()
 })
+
+window.browserAPI.onShortcutBookmark(() => {
+  btnStar.click()
+})
+
+// ============================================================
+// Тема и акцент теперь управляются через shared/theme.js.
+// Применение к DOM происходит автоматически при загрузке страницы.
+// Если нужно реагировать на изменения — используй window.themeManager.onTheme/onAccent.
+// ============================================================

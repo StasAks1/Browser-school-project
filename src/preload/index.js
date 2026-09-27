@@ -19,17 +19,14 @@ contextBridge.exposeInMainWorld('browserAPI', {
 
   getSecurityState: () => ipcRenderer.invoke('get-security-state'),
 
-  // Поиск по странице
   findInPage: (text, options) => ipcRenderer.invoke('find-in-page', text, options || {}),
   stopFindInPage: () => ipcRenderer.invoke('stop-find-in-page'),
   onFindResult: (cb) => ipcRenderer.on('find-result', (_e, result) => cb(result)),
   onOpenFindBar: (cb) => ipcRenderer.on('open-find-bar', () => cb()),
 
-  // Warning страница (HTTP)
   warningGoBack: () => ipcRenderer.invoke('warning-go-back'),
   warningProceed: (url) => ipcRenderer.invoke('warning-proceed', url),
 
-  // Error страница
   errorRetry: () => ipcRenderer.invoke('error-retry'),
   errorGoBack: () => ipcRenderer.invoke('error-go-back'),
   errorGoHome: () => ipcRenderer.invoke('error-go-home'),
@@ -42,6 +39,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
   getAccentOptions: () => ipcRenderer.invoke('get-accent-options'),
   setAccent: (name) => ipcRenderer.invoke('set-accent', name),
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
+  getPlatform: () => ipcRenderer.invoke('get-platform'),
   openSettingsPage: () => ipcRenderer.invoke('open-settings-page'),
 
   getDownloads: () => ipcRenderer.invoke('get-downloads'),
@@ -85,6 +83,20 @@ contextBridge.exposeInMainWorld('browserAPI', {
   openUrlFromHistory: (id) => ipcRenderer.invoke('open-url-from-history', id),
   openUrlInNewTab: (url) => ipcRenderer.invoke('open-url-in-new-tab', url),
 
+  getCookies: () => ipcRenderer.invoke('get-cookies'),
+  removeCookie: (payload) => ipcRenderer.invoke('remove-cookie', payload),
+  removeCookiesByDomain: (domain) => ipcRenderer.invoke('remove-cookies-by-domain', domain),
+  clearAllCookies: () => ipcRenderer.invoke('clear-all-cookies'),
+  openCookiesPage: () => ipcRenderer.invoke('open-cookies-page'),
+
+  getSessionSetting: () => ipcRenderer.invoke('get-session-setting'),
+  setSessionSetting: (value) => ipcRenderer.invoke('set-session-setting', value),
+  clearSession: () => ipcRenderer.invoke('clear-session'),
+
+  // ============ Импорт/экспорт закладок ============
+  exportBookmarks: () => ipcRenderer.invoke('export-bookmarks'),
+  importBookmarks: () => ipcRenderer.invoke('import-bookmarks'),
+
   permissionRespond: (allowed) => ipcRenderer.invoke('permission-respond', allowed),
 
   onPageUrl: (cb) => ipcRenderer.on('page-url', (_e, url) => cb(url)),
@@ -99,6 +111,12 @@ contextBridge.exposeInMainWorld('browserAPI', {
   onDownloadActiveCount: (cb) => ipcRenderer.on('download-active-count', (_e, count) => cb(count)),
   onSecurityState: (cb) => ipcRenderer.on('security-state', (_e, state) => cb(state)),
   onTabCloseRequest: (cb) => ipcRenderer.on('tab-close-request', (_e, id) => cb(id)),
+
+  onShortcutCloseTab: (cb) => ipcRenderer.on('shortcut-close-tab', () => cb()),
+  onShortcutFocusAddress: (cb) => ipcRenderer.on('shortcut-focus-address', () => cb()),
+  onShortcutBookmark: (cb) => ipcRenderer.on('shortcut-bookmark', () => cb()),
+
+  onStatusBarUrl: (cb) => ipcRenderer.on('statusbar-url', (_e, url) => cb(url)),
 })
 
 ipcRenderer.on('theme-changed', (_e, theme) => {

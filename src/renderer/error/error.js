@@ -10,13 +10,10 @@ const urlEl = document.getElementById('error-url')
 const codeEl = document.getElementById('error-code')
 const btnProceed = document.getElementById('btn-proceed')
 
-// Проверяем, является ли ошибка связанной с сертификатом
 function isCertificateError(code) {
   const c = parseInt(code, 10)
   if (isNaN(c)) return false
-  // Все ошибки сертификатов Chromium в диапазоне -200..-299
   if (c <= -200 && c >= -299) return true
-  // -501 ERR_INSECURE_RESPONSE
   if (c === -501) return true
   return false
 }
@@ -30,7 +27,6 @@ function getErrorInfo(code, desc) {
     '-109': { icon: '🚫', title: 'Хост недоступен', description: 'Не удаётся установить соединение с сервером.' },
     '-118': { icon: '⌛', title: 'Превышено время ожидания', description: 'Сервер слишком долго не отвечает.' },
 
-    // Ошибки сертификата
     '-200': { icon: '🔒', title: 'Сертификат недействителен', description: 'Сертификат сайта содержит ошибки или не соответствует домену.' },
     '-201': { icon: '🔒', title: 'Сертификат отклонён', description: 'Сертификат сайта недействителен.' },
     '-202': { icon: '🔒', title: 'Сертификат отклонён', description: 'Не удалось проверить подлинность сертификата. Возможно, сайт использует нестандартный удостоверяющий центр.' },
@@ -65,12 +61,10 @@ else urlEl.style.display = 'none'
 if (errorCode) codeEl.textContent = `Код ошибки: ${errorCode}${errorDesc ? ' · ' + errorDesc : ''}`
 else codeEl.style.display = 'none'
 
-// Показываем кнопку «Всё равно перейти» только для ошибок сертификата
 if (isCertificateError(errorCode) && failedUrl) {
   btnProceed.style.display = 'inline-flex'
 }
 
-// Кнопки
 document.getElementById('btn-retry').addEventListener('click', () => {
   window.browserAPI.errorRetry()
 })
@@ -83,18 +77,4 @@ document.getElementById('btn-home').addEventListener('click', () => {
   window.browserAPI.errorGoHome()
 })
 
-// Тема и акцент
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark'
-}
-
-function applyAccent(data) {
-  if (!data) return
-  document.documentElement.style.setProperty('--accent', data.color)
-  document.documentElement.style.setProperty('--accent-hover', data.hover)
-}
-
-window.browserAPI.onThemeChanged((theme) => applyTheme(theme))
-window.browserAPI.onAccentChanged((data) => applyAccent(data))
-window.browserAPI.getTheme().then((theme) => applyTheme(theme))
-window.browserAPI.getAccent().then((data) => applyAccent(data))
+// Тема и акцент: см. shared/theme.js

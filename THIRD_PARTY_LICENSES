@@ -1,0 +1,89 @@
+THIRD-PARTY SOFTWARE NOTICES
+=============================
+
+This project uses the following third-party software.
+Each component is used under the terms of its respective license.
+
+--------------------------------------------------------------------------------
+Electron
+--------------------------------------------------------------------------------
+Version:    44.x
+License:    MIT
+Homepage:   https://www.electronjs.org/
+Repository: https://github.com/electron/electron
+Copyright:  Copyright (c) Electron contributors
+            Copyright (c) 2013-2020 GitHub Inc.
+
+--------------------------------------------------------------------------------
+electron-vite
+--------------------------------------------------------------------------------
+Version:    5.x
+License:    MIT
+Homepage:   https://electron-vite.org/
+Repository: https://github.com/alex8088/electron-vite
+Copyright:  Copyright (c) alex8088
+
+--------------------------------------------------------------------------------
+Vite
+--------------------------------------------------------------------------------
+Version:    7.x
+License:    MIT
+Homepage:   https://vitejs.dev/
+Repository: https://github.com/vitejs/vite
+Copyright:  Copyright (c) 2019-present, Yuxi (Evan) You and Vite contributors
+
+--------------------------------------------------------------------------------
+electron-builder
+--------------------------------------------------------------------------------
+Version:    26.x
+License:    MIT
+Homepage:   https://www.electron.build/
+Repository: https://github.com/electron-userland/electron-builder
+Copyright:  Copyright (c) 2015 Loopline Systems
+
+--------------------------------------------------------------------------------
+Chromium
+--------------------------------------------------------------------------------
+Version:    bundled with Electron
+License:    BSD 3-Clause
+Homepage:   https://www.chromium.org/
+Repository: https://chromium.googlesource.com/chromium/src/
+Copyright:  Copyright (c) The Chromium Authors
+
+--------------------------------------------------------------------------------
+Node.js
+--------------------------------------------------------------------------------
+Version:    bundled with Electron
+License:    MIT
+Homepage:   https://nodejs.org/
+Repository: https://github.com/nodejs/node
+Copyright:  Copyright (c) Node.js contributors
+
+--------------------------------------------------------------------------------
+DuckDuckGo Autocomplete API
+--------------------------------------------------------------------------------
+Usage:      Search suggestions
+Type:       Public API, no authentication required
+Terms:      https://duckduckgo.com/api
+Note:       Requests are performed on behalf of the user only.
+            No user identifiers, telemetry, or personal data are sent.
+
+--------------------------------------------------------------------------------
+DuckDuckGo Favicon Service
+--------------------------------------------------------------------------------
+Usage:      Website icons for bookmarks and history
+Type:       Public service
+Terms:      https://duckduckgo.com/api
+Note:       Only the domain name is sent to fetch the icon.
+            No user identifiers or personal data are transmitted.
+
+--------------------------------------------------------------------------------
+Summary
+--------------------------------------------------------------------------------
+All third-party components listed above are distributed under permissive
+licenses (MIT, BSD 3-Clause) that allow free use, modification, and
+redistribution provided that the original copyright notice and license
+text are preserved.
+
+For the full text of each license, please refer to the respective project
+repositories or the node_modules directory of this project.

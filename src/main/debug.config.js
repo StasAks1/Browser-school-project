@@ -1,13 +1,19 @@
 /**
  * Флаги для отладки.
- * Перед релизом поставь enabled: false.
- * Или запусти с DEBUG=1 npm run dev — тогда всё включится автоматически.
+ *
+ * Перед релизом оставь enabled как есть — он зависит от переменной окружения.
+ * Чтобы включить debug локально:
+ *   DEBUG=1 npm run dev
+ * или на Windows (PowerShell):
+ *   $env:DEBUG="1"; npm run dev
+ * или на Windows (cmd):
+ *   set DEBUG=1 && npm run dev
  */
 const envDebug = process.env.DEBUG === '1' || process.env.DEBUG === 'true'
 
 export const DEBUG = {
   // Главный выключатель — если false, все debugLog становятся no-op
-  enabled: envDebug || true,
+  enabled: envDebug,
 
   // Открывать DevTools для каждой новой вкладки (в отдельном окне)
   openTabDevTools: false,

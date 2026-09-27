@@ -34,10 +34,30 @@ Desktop.ini
 .idea/
 *.iml
 
+# ============ Другие редакторы ============
+.history/
+.fleet/
+.zed/
+*.sublime-*
+
 # ============ Переменные окружения ============
 .env
 .env.local
 .env.*.local
+
+# ============ Менеджеры пакетов ============
+.npmrc
+.yarnrc
+.pnpm-store/
+.npm/
+
+# ============ Node / npm ============
+*.tsbuildinfo
+.eslintcache
+
+# ============ Тесты и покрытие ============
+coverage/
+.nyc_output/
 
 # ============ Временные файлы ============
 *.tmp
@@ -46,10 +66,17 @@ Desktop.ini
 .cache/
 .temp/
 
+# ============ Архивы ============
+*.tgz
+*.tar.gz
+
 # ============ Локальные данные пользователя ============
+# (на самом деле хранятся в userData вне проекта — оставлено для подстраховки)
 bookmarks.json
 history.json
 settings.json
+downloads.json
+session.json
 
 # ============ Временные файлы при сборке иконок ============
 build/icon.iconset/

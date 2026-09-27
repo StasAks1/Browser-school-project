@@ -22,7 +22,6 @@ const ICON_COPY = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_TRASH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`
 const ICON_X = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>`
 
-// ============ Определяем тип файла ============
 function getFileType(filename) {
   const ext = (filename.split('.').pop() || '').toLowerCase()
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic'].includes(ext)) return 'image'
@@ -50,7 +49,6 @@ function getFileIcon(type) {
   }
 }
 
-// ============ Форматирование ============
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -89,7 +87,6 @@ function getDomain(url) {
   try { return new URL(url).hostname.replace(/^www\./, '') } catch { return '' }
 }
 
-// ============ Статус ============
 function getStatusText(entry) {
   switch (entry.state) {
     case 'progressing': {
@@ -99,20 +96,14 @@ function getStatusText(entry) {
       }
       return formatBytes(entry.receivedBytes)
     }
-    case 'paused':
-      return 'Приостановлено'
-    case 'completed':
-      return formatBytes(entry.totalBytes || entry.receivedBytes)
-    case 'cancelled':
-      return 'Отменено'
-    case 'interrupted':
-      return 'Ошибка'
-    default:
-      return ''
+    case 'paused': return 'Приостановлено'
+    case 'completed': return formatBytes(entry.totalBytes || entry.receivedBytes)
+    case 'cancelled': return 'Отменено'
+    case 'interrupted': return 'Ошибка'
+    default: return ''
   }
 }
 
-// ============ Фильтр и группировка ============
 function filterDownloads(items) {
   if (!query) return items
   const q = query.toLowerCase().trim()
@@ -133,7 +124,6 @@ function groupByDate(items) {
   return Array.from(groups.entries())
 }
 
-// ============ Рендер ============
 function render() {
   const filtered = filterDownloads(allDownloads)
 
@@ -179,7 +169,6 @@ function createItem(entry) {
   const status = getStatusText(entry)
   const domain = getDomain(entry.url)
 
-  // Определяем процент для прогресс-бара
   let percent = 0
   if (entry.state === 'progressing' && entry.totalBytes > 0) {
     percent = Math.min(100, Math.round((entry.receivedBytes / entry.totalBytes) * 100))
@@ -187,7 +176,6 @@ function createItem(entry) {
     percent = 100
   }
 
-  // Действия зависят от состояния
   let actionsHtml = ''
   if (entry.state === 'completed') {
     actionsHtml = `
@@ -201,7 +189,6 @@ function createItem(entry) {
       <button class="item-btn danger" data-action="cancel" title="Отменить загрузку">${ICON_X}</button>
     `
   } else {
-    // cancelled / interrupted
     actionsHtml = `
       <button class="item-btn" data-action="copy" title="Копировать ссылку">${ICON_COPY}</button>
       <button class="item-btn danger" data-action="remove" title="Удалить из списка">${ICON_X}</button>
@@ -226,7 +213,6 @@ function createItem(entry) {
     <div class="download-actions">${actionsHtml}</div>
   `
 
-  // Обработчики действий
   el.querySelectorAll('.item-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation()
@@ -261,7 +247,6 @@ function createItem(entry) {
   return el
 }
 
-// ============ Toast ============
 let toastTimeout = null
 function showToast(message) {
   let toast = document.querySelector('.toast')
@@ -279,7 +264,6 @@ function showToast(message) {
   }, 2000)
 }
 
-// ============ События ============
 searchInput.addEventListener('input', () => {
   query = searchInput.value
   render()
@@ -296,7 +280,6 @@ btnClearAll.addEventListener('click', async () => {
   showToast('Список очищен')
 })
 
-// ============ Подписки ============
 window.browserAPI.onDownloadsUpdated((list) => {
   allDownloads = list || []
   render()
@@ -307,18 +290,4 @@ window.browserAPI.getDownloads().then((list) => {
   render()
 })
 
-// ============ Тема и акцент ============
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark'
-}
-
-function applyAccent(data) {
-  if (!data) return
-  document.documentElement.style.setProperty('--accent', data.color)
-  document.documentElement.style.setProperty('--accent-hover', data.hover)
-}
-
-window.browserAPI.onThemeChanged((theme) => applyTheme(theme))
-window.browserAPI.onAccentChanged((data) => applyAccent(data))
-window.browserAPI.getTheme().then((theme) => applyTheme(theme))
-window.browserAPI.getAccent().then((data) => applyAccent(data))
+// Тема и акцент: см. shared/theme.js

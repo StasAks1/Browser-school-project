@@ -3,10 +3,13 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { debugLog, debugDevTools, debugTabEvent, debugStartupBanner, attachNetworkLogger } from './debug.js'
+import { matchShortcut } from './shortcuts.js'
+import { saveSession, loadSession, clearSession, isRestorableUrl } from './session.js'
+import { generateBookmarksHTML, parseBookmarksHTML } from './bookmarks-io.js'
+import { isPopupRequest, buildPopupWindowOptions, attachPopupHandlers } from './popup.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// Отключаем принудительный HTTPS-First Mode — чтобы HTTP-сайты не блокировались
 app.commandLine.appendSwitch('disable-features', 'HttpsFirstModeV2,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable')
 
 const CHROME_HEIGHT_BASE = 80
@@ -14,10 +17,15 @@ const CHROME_HEIGHT_BOOKMARKS = 112
 const CHROME_ANIM_DURATION = 280
 const CHROME_ANIM_FRAME = 16
 
+const STATUSBAR_HEIGHT = 26
+const STATUSBAR_PADDING = 8
+const STATUSBAR_MAX_WIDTH = 520
+
 const INTERNAL_BOOKMARKS = 'internal://bookmarks'
 const INTERNAL_HISTORY = 'internal://history'
 const INTERNAL_SETTINGS = 'internal://settings'
 const INTERNAL_DOWNLOADS = 'internal://downloads'
+const INTERNAL_COOKIES = 'internal://cookies'
 
 const POPUP_WIDTH = 300
 const POPUP_HEIGHT = 165
@@ -34,6 +42,8 @@ const CLOSED_TABS_MAX = 25
 const SUGGESTIONS_CACHE_TTL = 5 * 60 * 1000
 const SUGGESTIONS_TIMEOUT = 3000
 
+const SESSION_SAVE_DEBOUNCE = 500
+
 const ACCENT_COLORS = {
   orange: { color: '#de5833', hover: '#c94a28', label: 'Оранжевый' },
   blue:   { color: '#3b82f6', hover: '#2563eb', label: 'Синий' },
@@ -46,6 +56,7 @@ const ACCENT_DEFAULT = 'orange'
 
 let mainWindow = null
 let chromeView = null
+let statusBarView = null
 let popupWindow = null
 let tabs = []
 let activeTabId = null
@@ -59,6 +70,7 @@ let settingsCache = {
   accent: ACCENT_DEFAULT,
   downloadPath: '',
   askWhereToSave: false,
+  restoreSession: true,
 }
 
 const activeDownloads = new Map()
@@ -70,6 +82,10 @@ const allowedBadCertHosts = new Set()
 let currentChromeHeight = CHROME_HEIGHT_BASE
 let chromeAnimTimer = null
 let isQuitting = false
+
+// ============ Session restore ============
+let sessionSaveTimer = null
+let pendingSessionToRestore = null
 
 // ============================================================
 // ============ РАЗРЕШЕНИЯ ====================================
@@ -291,13 +307,48 @@ function attachTabSecurityHandlers(tab) {
   const wc = tab.view.webContents
   attachDownloadHandlerToSession(wc.session)
 
-  wc.setWindowOpenHandler(({ url }) => {
+  wc.setWindowOpenHandler((details) => {
+    const { url, disposition } = details
+
     debugTabEvent(tab.id, 'window.open', url)
-    try {
-      const parsed = new URL(url)
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') createTab(url)
-    } catch {}
+
+    let parsed = null
+    try { parsed = new URL(url) } catch {}
+
+    if (!parsed) return { action: 'deny' }
+
+    if (parsed.protocol === 'about:' && parsed.pathname === 'blank') {
+      if (isPopupRequest(details)) {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: buildPopupWindowOptions(details, mainWindow),
+        }
+      }
+      return { action: 'deny' }
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      if (['mailto:', 'tel:'].includes(parsed.protocol)) {
+        try { shell.openExternal(url) } catch (e) {}
+      }
+      return { action: 'deny' }
+    }
+
+    // ============ POPUP (OAuth, share-диалоги и т.п.) ============
+    if (isPopupRequest(details)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: buildPopupWindowOptions(details, mainWindow),
+      }
+    }
+
+    // ============ ОБЫЧНЫЙ window.open → в новую вкладку ============
+    createTab(url)
     return { action: 'deny' }
+  })
+
+  wc.on('did-create-window', (popupWin) => {
+    attachPopupHandlers(popupWin, createTab)
   })
 
   wc.on('will-navigate', (event, url) => {
@@ -362,6 +413,8 @@ function isTrustedInternalUrl(url) {
     url.includes('history/history.html') ||
     url.includes('settings/settings.html') ||
     url.includes('downloads/downloads.html') ||
+    url.includes('cookies/cookies.html') ||
+    url.includes('statusbar/statusbar.html') ||
     url.includes('error/error.html') ||
     url.includes('warning/warning.html') ||
     url.includes('index/index.html') ||
@@ -396,6 +449,14 @@ function getSettingsPageUrl() {
 function getDownloadsPagePath() { return path.join(__dirname, '../renderer/downloads/downloads.html') }
 function getDownloadsPageUrl() {
   return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/downloads/downloads.html` : null
+}
+function getCookiesPagePath() { return path.join(__dirname, '../renderer/cookies/cookies.html') }
+function getCookiesPageUrl() {
+  return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/cookies/cookies.html` : null
+}
+function getStatusBarPath() { return path.join(__dirname, '../renderer/statusbar/statusbar.html') }
+function getStatusBarUrl() {
+  return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/statusbar/statusbar.html` : null
 }
 function getErrorPagePath() { return path.join(__dirname, '../renderer/error/error.html') }
 function getErrorPageUrl() {
@@ -432,14 +493,27 @@ function loadSettings() {
         accent: ACCENT_COLORS[data.accent] ? data.accent : ACCENT_DEFAULT,
         downloadPath: typeof data.downloadPath === 'string' ? data.downloadPath : '',
         askWhereToSave: !!data.askWhereToSave,
+        restoreSession: data.restoreSession !== false,
       }
     } else {
-      settingsCache = { theme: 'dark', accent: ACCENT_DEFAULT, downloadPath: '', askWhereToSave: false }
+      settingsCache = {
+        theme: 'dark',
+        accent: ACCENT_DEFAULT,
+        downloadPath: '',
+        askWhereToSave: false,
+        restoreSession: true,
+      }
       saveSettings()
     }
   } catch (err) {
     console.error('Failed to load settings:', err)
-    settingsCache = { theme: 'dark', accent: ACCENT_DEFAULT, downloadPath: '', askWhereToSave: false }
+    settingsCache = {
+      theme: 'dark',
+      accent: ACCENT_DEFAULT,
+      downloadPath: '',
+      askWhereToSave: false,
+      restoreSession: true,
+    }
   }
 }
 
@@ -483,17 +557,36 @@ function applyBackgroundColors() {
   }
 }
 
+function updateTitleBarOverlay() {
+  if (process.platform !== 'win32') return
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (typeof mainWindow.setTitleBarOverlay !== 'function') return
+  try {
+    const themeColor = getBackgroundColor()
+    const symbolColor = getResolvedTheme() === 'light' ? '#1a1a1a' : '#f0f0f0'
+    mainWindow.setTitleBarOverlay({
+      color: themeColor,
+      symbolColor,
+      height: 44,
+    })
+  } catch (e) {
+    debugLog('Window', `Не удалось обновить titleBarOverlay: ${e.message}`)
+  }
+}
+
 function broadcastTheme() {
   const theme = getResolvedTheme()
   if (chromeView && !chromeView.webContents.isDestroyed()) chromeView.webContents.send('theme-changed', theme)
   for (const tab of tabs) {
     if (tab.view && !tab.view.webContents.isDestroyed()) tab.view.webContents.send('theme-changed', theme)
   }
+  if (statusBarView && !statusBarView.webContents.isDestroyed()) statusBarView.webContents.send('theme-changed', theme)
   if (popupWindow && !popupWindow.isDestroyed()) popupWindow.webContents.send('theme-changed', theme)
   if (pendingPermission && pendingPermission.popupWindow && !pendingPermission.popupWindow.isDestroyed()) {
     pendingPermission.popupWindow.webContents.send('theme-changed', theme)
   }
   applyBackgroundColors()
+  updateTitleBarOverlay()
 }
 
 function broadcastAccent() {
@@ -502,6 +595,7 @@ function broadcastAccent() {
   for (const tab of tabs) {
     if (tab.view && !tab.view.webContents.isDestroyed()) tab.view.webContents.send('accent-changed', data)
   }
+  if (statusBarView && !statusBarView.webContents.isDestroyed()) statusBarView.webContents.send('accent-changed', data)
   if (popupWindow && !popupWindow.isDestroyed()) popupWindow.webContents.send('accent-changed', data)
   if (pendingPermission && pendingPermission.popupWindow && !pendingPermission.popupWindow.isDestroyed()) {
     pendingPermission.popupWindow.webContents.send('accent-changed', data)
@@ -712,6 +806,10 @@ function getTargetChromeHeight() {
   return bookmarksCache.length > 0 ? CHROME_HEIGHT_BOOKMARKS : CHROME_HEIGHT_BASE
 }
 
+function makeBookmarkId(prefix) {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${prefix}`
+}
+
 // ============================================================
 // ============ ХЕЛПЕРЫ =======================================
 // ============================================================
@@ -723,11 +821,13 @@ function isBookmarksPageUrl(url) { if (!url) return false; return url.includes('
 function isHistoryPageUrl(url) { if (!url) return false; return url.includes('history/history.html') }
 function isSettingsPageUrl(url) { if (!url) return false; return url.includes('settings/settings.html') }
 function isDownloadsPageUrl(url) { if (!url) return false; return url.includes('downloads/downloads.html') }
+function isCookiesPageUrl(url) { if (!url) return false; return url.includes('cookies/cookies.html') }
 function isErrorPageUrl(url) { if (!url) return false; return url.includes('error/error.html') }
 function isWarningPageUrl(url) { if (!url) return false; return url.includes('warning/warning.html') }
 function isInternalUrl(url) {
   return isStartpageUrl(url) || isBookmarksPageUrl(url) || isHistoryPageUrl(url) ||
-         isSettingsPageUrl(url) || isDownloadsPageUrl(url) || isErrorPageUrl(url) || isWarningPageUrl(url)
+         isSettingsPageUrl(url) || isDownloadsPageUrl(url) || isCookiesPageUrl(url) ||
+         isErrorPageUrl(url) || isWarningPageUrl(url)
 }
 
 function serializeTabs() {
@@ -742,6 +842,7 @@ function serializeTabs() {
 }
 
 function sendTabsUpdate() {
+  scheduleSessionSave()
   if (!chromeView || chromeView.webContents.isDestroyed()) return
   chromeView.webContents.send('tabs-updated', serializeTabs())
 }
@@ -758,6 +859,161 @@ function sendLoadingState() {
   if (!chromeView || chromeView.webContents.isDestroyed()) return
   const active = getActiveTab()
   chromeView.webContents.send('page-loading', active ? !!active.isLoading : false)
+}
+
+// ============================================================
+// ============ SESSION RESTORE ===============================
+// ============================================================
+function getRestorableTabsWithActive() {
+  const list = []
+  let activeIdx = -1
+  for (const tab of tabs) {
+    let url = ''
+    try { url = tab.view.webContents.getURL() } catch (e) {}
+    if (!url) url = tab.url || ''
+    if (!isRestorableUrl(url)) continue
+    if (tab.id === activeTabId) activeIdx = list.length
+    list.push({
+      url,
+      title: tab.title || url,
+      favicon: tab.favicon || null,
+    })
+  }
+  return { tabs: list, activeIndex: activeIdx >= 0 ? activeIdx : 0 }
+}
+
+function doSaveSessionNow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (tabs.length === 0) {
+    clearSession()
+    return
+  }
+
+  const { tabs: restorable, activeIndex } = getRestorableTabsWithActive()
+  if (restorable.length === 0) {
+    clearSession()
+    return
+  }
+
+  saveSession({ tabs: restorable, activeIndex })
+}
+
+function scheduleSessionSave() {
+  if (!settingsCache.restoreSession) return
+  if (sessionSaveTimer) clearTimeout(sessionSaveTimer)
+  sessionSaveTimer = setTimeout(() => {
+    sessionSaveTimer = null
+    doSaveSessionNow()
+  }, SESSION_SAVE_DEBOUNCE)
+}
+
+function flushSessionSave() {
+  if (sessionSaveTimer) {
+    clearTimeout(sessionSaveTimer)
+    sessionSaveTimer = null
+  }
+  if (settingsCache.restoreSession) {
+    doSaveSessionNow()
+  } else {
+    clearSession()
+  }
+}
+
+function restoreSessionIntoTabs() {
+  if (!pendingSessionToRestore) {
+    createTab()
+    return
+  }
+
+  const s = pendingSessionToRestore
+  pendingSessionToRestore = null
+
+  if (!s.tabs || s.tabs.length === 0) {
+    createTab()
+    return
+  }
+
+  const createdIds = []
+  for (const t of s.tabs) {
+    const tab = createTab(t.url)
+    if (tab) createdIds.push(tab.id)
+  }
+
+  if (createdIds.length === 0) {
+    createTab()
+    return
+  }
+
+  const targetIdx = Math.min(Math.max(0, s.activeIndex), createdIds.length - 1)
+  switchTab(createdIds[targetIdx])
+  debugLog('Session', `Восстановлено вкладок: ${createdIds.length}, активна #${targetIdx + 1}`)
+}
+
+// ============================================================
+// ============ STATUS BAR ====================================
+// ============================================================
+function createStatusBar() {
+  statusBarView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      transparent: true,
+    },
+  })
+  statusBarView.setBackgroundColor('#00000000')
+  statusBarView.setBounds({ x: 0, y: 0, width: 0, height: 0 })
+  mainWindow.contentView.addChildView(statusBarView)
+
+  const u = getStatusBarUrl()
+  if (u) statusBarView.webContents.loadURL(u)
+  else statusBarView.webContents.loadFile(getStatusBarPath())
+
+  statusBarView.webContents.on('dom-ready', () => {
+    statusBarView.webContents.send('theme-changed', getResolvedTheme())
+    statusBarView.webContents.send('accent-changed', getAccentData())
+  })
+
+  statusBarView.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    if (isMainFrame) {
+      debugLog('StatusBar', `did-fail-load: ${code} ${desc} (${url})`)
+    }
+  })
+}
+
+function layoutStatusBar(visible) {
+  if (!statusBarView || statusBarView.webContents.isDestroyed()) return
+  if (!mainWindow || mainWindow.isDestroyed()) return
+
+  if (!visible) {
+    statusBarView.setBounds({ x: 0, y: 0, width: 0, height: 0 })
+    return
+  }
+
+  const [width, height] = mainWindow.getContentSize()
+  const w = Math.min(STATUSBAR_MAX_WIDTH, width - STATUSBAR_PADDING * 2)
+  statusBarView.setBounds({
+    x: STATUSBAR_PADDING,
+    y: height - STATUSBAR_HEIGHT - STATUSBAR_PADDING,
+    width: w,
+    height: STATUSBAR_HEIGHT,
+  })
+}
+
+function updateStatusBar(url) {
+  if (!statusBarView || statusBarView.webContents.isDestroyed()) return
+  const clean = typeof url === 'string' ? url.trim() : ''
+  if (clean) {
+    statusBarView.webContents.send('statusbar-url', clean)
+    layoutStatusBar(true)
+  } else {
+    layoutStatusBar(false)
+  }
+}
+
+function hideStatusBar() {
+  updateStatusBar('')
 }
 
 // ============================================================
@@ -822,7 +1078,7 @@ function updateChromeHeightForBookmarks() {
 // ============================================================
 function isUrlLike(input) {
   if (!input) return false
-  if (input === INTERNAL_BOOKMARKS || input === INTERNAL_HISTORY || input === INTERNAL_SETTINGS || input === INTERNAL_DOWNLOADS) return true
+  if (input === INTERNAL_BOOKMARKS || input === INTERNAL_HISTORY || input === INTERNAL_SETTINGS || input === INTERNAL_DOWNLOADS || input === INTERNAL_COOKIES) return true
   if (/\s/.test(input)) return false
   if (/^https?:\/\//i.test(input)) return true
   if (/^localhost(:\d+)?(\/|$)/.test(input)) return true
@@ -832,7 +1088,7 @@ function isUrlLike(input) {
 
 function normalizeToUrl(input) {
   const trimmed = input.trim()
-  if (trimmed === INTERNAL_BOOKMARKS || trimmed === INTERNAL_HISTORY || trimmed === INTERNAL_SETTINGS || trimmed === INTERNAL_DOWNLOADS) return trimmed
+  if (trimmed === INTERNAL_BOOKMARKS || trimmed === INTERNAL_HISTORY || trimmed === INTERNAL_SETTINGS || trimmed === INTERNAL_DOWNLOADS || trimmed === INTERNAL_COOKIES) return trimmed
   if (isUrlLike(trimmed)) {
     if (/^https?:\/\//i.test(trimmed)) return trimmed
     return 'https://' + trimmed
@@ -911,6 +1167,7 @@ function createTab(url) {
     isHistoryManager: false,
     isSettingsPage: false,
     isDownloadsManager: false,
+    isCookiesManager: false,
     isErrorPage: false,
     isWarningPage: false,
     errorUrl: '',
@@ -921,6 +1178,7 @@ function createTab(url) {
   if (url === INTERNAL_HISTORY) { tab.isHistoryManager = true; tab.title = 'История' }
   if (url === INTERNAL_SETTINGS) { tab.isSettingsPage = true; tab.title = 'Настройки' }
   if (url === INTERNAL_DOWNLOADS) { tab.isDownloadsManager = true; tab.title = 'Загрузки' }
+  if (url === INTERNAL_COOKIES) { tab.isCookiesManager = true; tab.title = 'Cookie' }
 
   tabs.push(tab)
   mainWindow.contentView.addChildView(view)
@@ -931,7 +1189,10 @@ function createTab(url) {
 
   wc.on('did-start-loading', () => {
     tab.isLoading = true
-    if (tab.id === activeTabId) sendLoadingState()
+    if (tab.id === activeTabId) {
+      sendLoadingState()
+      hideStatusBar()
+    }
     sendTabsUpdate()
   })
 
@@ -941,20 +1202,23 @@ function createTab(url) {
     const isH = isHistoryPageUrl(currentUrl)
     const isS = isSettingsPageUrl(currentUrl)
     const isD = isDownloadsPageUrl(currentUrl)
+    const isC = isCookiesPageUrl(currentUrl)
     const isE = isErrorPageUrl(currentUrl)
     const isW = isWarningPageUrl(currentUrl)
     tab.isBookmarksManager = isBM
     tab.isHistoryManager = isH
     tab.isSettingsPage = isS
     tab.isDownloadsManager = isD
+    tab.isCookiesManager = isC
     tab.isErrorPage = isE
     tab.isWarningPage = isW
     tab.title = isBM ? 'Закладки'
       : (isH ? 'История'
       : (isS ? 'Настройки'
       : (isD ? 'Загрузки'
+      : (isC ? 'Cookie'
       : (isE ? 'Не удалось открыть страницу'
-      : (isW ? 'Соединение не защищено' : title)))))
+      : (isW ? 'Соединение не защищено' : title))))))
     sendTabsUpdate()
   })
 
@@ -983,8 +1247,6 @@ function createTab(url) {
     wc.send('accent-changed', getAccentData())
   })
 
-  // ============ Поиск по странице ============
-  // Событие приходит, когда поиск что-то нашёл
   wc.on('found-in-page', (_e, result) => {
     if (tab.id !== activeTabId) return
     if (!chromeView || chromeView.webContents.isDestroyed()) return
@@ -994,30 +1256,29 @@ function createTab(url) {
     })
   })
 
-  // Перехват Cmd+F / Ctrl+F, когда фокус на странице
-  wc.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown') return
-    const isMod = input.meta || input.control
-    if (isMod && input.key.toLowerCase() === 'f') {
-      event.preventDefault()
-      if (chromeView && !chromeView.webContents.isDestroyed()) {
-        chromeView.webContents.send('open-find-bar')
-      }
-    }
+  attachShortcuts(wc)
+
+  wc.on('update-target-url', (_e, targetUrl) => {
+    if (tab.id !== activeTabId) return
+    updateStatusBar(targetUrl)
   })
 
   wc.on('did-navigate', (_e, navUrl) => {
     tab.url = navUrl
+    if (tab.id === activeTabId) hideStatusBar()
+
     const isBM = isBookmarksPageUrl(navUrl)
     const isH = isHistoryPageUrl(navUrl)
     const isS = isSettingsPageUrl(navUrl)
     const isD = isDownloadsPageUrl(navUrl)
+    const isC = isCookiesPageUrl(navUrl)
     const isE = isErrorPageUrl(navUrl)
     const isW = isWarningPageUrl(navUrl)
     tab.isBookmarksManager = isBM
     tab.isHistoryManager = isH
     tab.isSettingsPage = isS
     tab.isDownloadsManager = isD
+    tab.isCookiesManager = isC
     tab.isErrorPage = isE
     tab.isWarningPage = isW
 
@@ -1025,6 +1286,7 @@ function createTab(url) {
     else if (isH) { tab.title = 'История'; tab.favicon = null }
     else if (isS) { tab.title = 'Настройки'; tab.favicon = null }
     else if (isD) { tab.title = 'Загрузки'; tab.favicon = null }
+    else if (isC) { tab.title = 'Cookie'; tab.favicon = null }
     else if (isE) { tab.title = 'Не удалось открыть страницу'; tab.favicon = null }
     else if (isW) { tab.title = 'Соединение не защищено'; tab.favicon = null }
     else {
@@ -1044,6 +1306,7 @@ function createTab(url) {
   wc.on('did-navigate-in-page', (_e, navUrl) => {
     tab.url = navUrl
     if (tab.id === activeTabId) {
+      hideStatusBar()
       sendActiveTabUrl()
       broadcastSecurityState()
     }
@@ -1085,6 +1348,11 @@ function loadTabContent(tab, url) {
     if (u) wc.loadURL(u); else wc.loadFile(getDownloadsPagePath())
     return
   }
+  if (url === INTERNAL_COOKIES) {
+    const u = getCookiesPageUrl()
+    if (u) wc.loadURL(u); else wc.loadFile(getCookiesPagePath())
+    return
+  }
   if (url && url !== 'about:blank') {
     try {
       const parsed = new URL(url)
@@ -1123,6 +1391,7 @@ function closeTab(id) {
   } catch (e) {}
 
   tabs.splice(idx, 1)
+  hideStatusBar()
 
   if (tabs.length === 0) {
     activeTabId = null
@@ -1151,11 +1420,13 @@ function switchTab(id) {
   if (!getTab(id)) return
   if (activeTabId === id) return
   activeTabId = id
+  hideStatusBar()
   layoutViews()
   sendTabsUpdate()
   sendActiveTabUrl()
   sendLoadingState()
   broadcastSecurityState()
+  scheduleSessionSave()
 }
 
 function restoreClosedTab() {
@@ -1202,6 +1473,11 @@ function navigateInActiveTab(input) {
     if (u) tab.view.webContents.loadURL(u); else tab.view.webContents.loadFile(getDownloadsPagePath())
     return
   }
+  if (url === INTERNAL_COOKIES) {
+    const u = getCookiesPageUrl()
+    if (u) tab.view.webContents.loadURL(u); else tab.view.webContents.loadFile(getCookiesPagePath())
+    return
+  }
 
   try {
     const parsed = new URL(url)
@@ -1215,6 +1491,7 @@ function navigateInActiveTab(input) {
   tab.isHistoryManager = false
   tab.isSettingsPage = false
   tab.isDownloadsManager = false
+  tab.isCookiesManager = false
   tab.isErrorPage = false
   tab.isWarningPage = false
   tab.favicon = null
@@ -1230,6 +1507,7 @@ function goHomeInActiveTab() {
   tab.isHistoryManager = false
   tab.isSettingsPage = false
   tab.isDownloadsManager = false
+  tab.isCookiesManager = false
   tab.isErrorPage = false
   tab.isWarningPage = false
   tab.favicon = null
@@ -1242,6 +1520,7 @@ function openBookmarksManager() { createTab(INTERNAL_BOOKMARKS) }
 function openHistoryManager() { createTab(INTERNAL_HISTORY) }
 function openSettingsPage() { createTab(INTERNAL_SETTINGS) }
 function openDownloadsPage() { createTab(INTERNAL_DOWNLOADS) }
+function openCookiesPage() { createTab(INTERNAL_COOKIES) }
 
 // ============================================================
 // ============ POPUP ЗАКЛАДКИ ================================
@@ -1302,11 +1581,30 @@ function openBookmarkPopup({ rect, bookmarkId, title, url }) {
 // ============ ОКНО ==========================================
 // ============================================================
 function createWindow() {
+  const isMac = process.platform === 'darwin'
+  const isWin = process.platform === 'win32'
+
+  const themeColor = getBackgroundColor()
+  const symbolColor = getResolvedTheme() === 'light' ? '#1a1a1a' : '#f0f0f0'
+
   mainWindow = new BrowserWindow({
     width: 1200, height: 800, minWidth: 700, minHeight: 500,
-    backgroundColor: getBackgroundColor(),
-    titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 16, y: 14 },
+    backgroundColor: themeColor,
+    ...(isMac ? {
+      titleBarStyle: 'hidden',
+      trafficLightPosition: { x: 16, y: 14 },
+    } : {}),
+    ...(isWin ? {
+      titleBarStyle: 'hidden',
+      titleBarOverlay: {
+        color: themeColor,
+        symbolColor,
+        height: 44,
+      },
+    } : {}),
+    ...(!isMac && !isWin ? {
+      titleBarStyle: 'default',
+    } : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true, nodeIntegration: false, sandbox: false,
@@ -1336,20 +1634,153 @@ function createWindow() {
     broadcastSecurityState()
   })
 
-  createTab()
+  attachShortcuts(chromeView.webContents)
+
+  // Вкладки: либо восстановить сессию, либо открыть стартовую
+  restoreSessionIntoTabs()
+
+  // Status bar создаётся ПОСЛЕ вкладок, чтобы быть выше них по z-order
+  createStatusBar()
 
   currentChromeHeight = getTargetChromeHeight()
   applyLayout(currentChromeHeight)
 
-  mainWindow.on('resize', layoutViews)
+  mainWindow.on('resize', () => {
+    layoutViews()
+    hideStatusBar()
+  })
   mainWindow.on('closed', () => {
     closeBookmarkPopup()
     closePermissionPopup()
     if (chromeAnimTimer) { clearTimeout(chromeAnimTimer); chromeAnimTimer = null }
-    mainWindow = null; chromeView = null; tabs = []; activeTabId = null
+    mainWindow = null; chromeView = null; statusBarView = null; tabs = []; activeTabId = null
   })
 
   applyBackgroundColors()
+}
+
+// ============================================================
+// ============ ГОРЯЧИЕ КЛАВИШИ ===============================
+// ============================================================
+function executeShortcut(command) {
+  switch (command) {
+    case 'new-tab':
+      createTab()
+      break
+
+    case 'restore-tab':
+      restoreClosedTab()
+      break
+
+    case 'close-tab':
+      if (chromeView && !chromeView.webContents.isDestroyed()) {
+        chromeView.webContents.send('shortcut-close-tab')
+      }
+      break
+
+    case 'focus-address':
+      if (chromeView && !chromeView.webContents.isDestroyed()) {
+        chromeView.webContents.focus()
+        chromeView.webContents.send('shortcut-focus-address')
+      }
+      break
+
+    case 'bookmark-page':
+      if (chromeView && !chromeView.webContents.isDestroyed()) {
+        chromeView.webContents.send('shortcut-bookmark')
+      }
+      break
+
+    case 'find-in-page':
+      if (chromeView && !chromeView.webContents.isDestroyed()) {
+        chromeView.webContents.send('open-find-bar')
+      }
+      break
+
+    case 'open-downloads':
+      openDownloadsPage()
+      break
+
+    case 'open-history':
+      openHistoryManager()
+      break
+
+    case 'open-settings':
+      openSettingsPage()
+      break
+
+    case 'open-bookmarks-manager':
+      openBookmarksManager()
+      break
+
+    case 'reload': {
+      const tab = getActiveTab()
+      if (tab && tab.view) tab.view.webContents.reload()
+      break
+    }
+
+    case 'force-reload': {
+      const tab = getActiveTab()
+      if (tab && tab.view) tab.view.webContents.reloadIgnoringCache()
+      break
+    }
+
+    case 'go-back': {
+      const wc = getActiveTab()?.view?.webContents
+      if (wc?.canGoBack()) wc.goBack()
+      break
+    }
+
+    case 'go-forward': {
+      const wc = getActiveTab()?.view?.webContents
+      if (wc?.canGoForward()) wc.goForward()
+      break
+    }
+
+    case 'go-home':
+      goHomeInActiveTab()
+      break
+
+    case 'zoom-in': {
+      const tab = getActiveTab()
+      if (tab && tab.view) {
+        const wc = tab.view.webContents
+        wc.setZoomLevel(Math.min(wc.getZoomLevel() + 0.5, 5))
+      }
+      break
+    }
+
+    case 'zoom-out': {
+      const tab = getActiveTab()
+      if (tab && tab.view) {
+        const wc = tab.view.webContents
+        wc.setZoomLevel(Math.max(wc.getZoomLevel() - 0.5, -5))
+      }
+      break
+    }
+
+    case 'zoom-reset': {
+      const tab = getActiveTab()
+      if (tab && tab.view) tab.view.webContents.setZoomLevel(0)
+      break
+    }
+
+    case 'toggle-fullscreen':
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setFullScreen(!mainWindow.isFullScreen())
+      }
+      break
+  }
+}
+
+function attachShortcuts(wc) {
+  if (!wc || wc.isDestroyed()) return
+  wc.on('before-input-event', (event, input) => {
+    const command = matchShortcut(input)
+    if (!command) return
+    event.preventDefault()
+    executeShortcut(command)
+  })
 }
 
 // ============================================================
@@ -1426,12 +1857,26 @@ function extractSuggestions(data) {
 }
 
 // ============================================================
+// ============ COOKIES (IPC) =================================
+// ============================================================
+function getSessionForCookies() {
+  if (!mainWindow || mainWindow.isDestroyed()) return null
+  return mainWindow.webContents.session
+}
+
+function buildCookieUrl(cookie) {
+  const protocol = cookie.secure ? 'https' : 'http'
+  const cleanDomain = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain
+  const p = cookie.path && cookie.path.startsWith('/') ? cookie.path : '/'
+  return `${protocol}://${cleanDomain}${p}`
+}
+
+// ============================================================
 // ============ IPC ===========================================
 // ============================================================
 app.whenReady().then(() => {
   debugStartupBanner()
 
-  // Иконка в Dock (macOS) — видно уже в dev-режиме
   if (process.platform === 'darwin' && app.dock) {
     try {
       app.dock.setIcon(path.join(__dirname, '../../build/icon.png'))
@@ -1440,7 +1885,6 @@ app.whenReady().then(() => {
     }
   }
 
-  // Доверяем "плохим" сертификатам для хостов, которые пользователь подтвердил
   app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
     try {
       const parsed = new URL(url)
@@ -1458,6 +1902,14 @@ app.whenReady().then(() => {
   loadBookmarks()
   loadHistory()
   loadDownloads()
+
+  if (settingsCache.restoreSession) {
+    pendingSessionToRestore = loadSession()
+    if (pendingSessionToRestore) {
+      debugLog('Session', `Найдена сессия: ${pendingSessionToRestore.tabs.length} вкл.`)
+    }
+  }
+
   createWindow()
 
   warmUpSuggestions()
@@ -1512,7 +1964,6 @@ app.whenReady().then(() => {
     menu.popup({ window: mainWindow })
   })
 
-  // ============ Warning страница ============
   ipcMain.handle('warning-go-back', () => {
     const wc = getActiveTab()?.view?.webContents
     if (wc?.canGoBack()) wc.goBack()
@@ -1533,7 +1984,6 @@ app.whenReady().then(() => {
     }
   })
 
-  // ============ Error страница ============
   ipcMain.handle('error-retry', () => {
     const tab = getActiveTab()
     if (!tab || !tab.isErrorPage) return
@@ -1565,7 +2015,6 @@ app.whenReady().then(() => {
     }
   })
 
-  // ============ Поиск по странице ============
   ipcMain.handle('find-in-page', (_e, text, options = {}) => {
     const tab = getActiveTab()
     if (!tab || !tab.view) return
@@ -1600,7 +2049,6 @@ app.whenReady().then(() => {
     }
   })
 
-  // ============ Настройки ============
   ipcMain.handle('get-settings', () => ({
     ...settingsCache,
     resolvedTheme: getResolvedTheme(),
@@ -1631,8 +2079,141 @@ app.whenReady().then(() => {
     nodeVersion: process.versions.node,
     platform: process.platform,
   }))
+  ipcMain.handle('get-platform', () => process.platform)
 
-  // ============ Загрузки ============
+  // ============ Session restore ============
+  ipcMain.handle('get-session-setting', () => ({
+    restoreSession: !!settingsCache.restoreSession,
+  }))
+  ipcMain.handle('set-session-setting', (_e, value) => {
+    settingsCache.restoreSession = !!value
+    saveSettings()
+    if (!settingsCache.restoreSession) {
+      clearSession()
+    }
+    return { restoreSession: !!settingsCache.restoreSession }
+  })
+  ipcMain.handle('clear-session', () => {
+    clearSession()
+    return { ok: true }
+  })
+
+  // ============ Импорт/экспорт закладок ============
+  ipcMain.handle('export-bookmarks', async () => {
+    const total = bookmarksCache.length
+    if (total === 0) {
+      return { ok: false, error: 'Нет закладок для экспорта' }
+    }
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Экспорт закладок',
+      defaultPath: path.join(app.getPath('downloads'), 'bookmarks.html'),
+      filters: [
+        { name: 'HTML', extensions: ['html', 'htm'] },
+      ],
+      properties: ['createDirectory'],
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { ok: false, canceled: true }
+    }
+
+    try {
+      const html = generateBookmarksHTML(bookmarksCache, foldersCache)
+      fs.writeFileSync(result.filePath, html, 'utf-8')
+      debugLog('Bookmarks', `Экспортировано ${total} закладок в ${result.filePath}`)
+      return { ok: true, path: result.filePath, count: total }
+    } catch (err) {
+      debugLog('Bookmarks', `Ошибка экспорта: ${err.message}`)
+      return { ok: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('import-bookmarks', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Импорт закладок',
+      filters: [
+        { name: 'HTML', extensions: ['html', 'htm'] },
+        { name: 'Все файлы', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    })
+
+    if (result.canceled || !result.filePaths.length) {
+      return { ok: false, canceled: true }
+    }
+
+    const filePath = result.filePaths[0]
+
+    let raw
+    try {
+      raw = fs.readFileSync(filePath, 'utf-8')
+    } catch (err) {
+      return { ok: false, error: 'Не удалось прочитать файл: ' + err.message }
+    }
+
+    let parsed
+    try {
+      parsed = parseBookmarksHTML(raw)
+    } catch (err) {
+      return { ok: false, error: 'Не удалось разобрать файл: ' + err.message }
+    }
+
+    if (!parsed.bookmarks.length && !parsed.folders.length) {
+      return { ok: false, error: 'В файле не найдено закладок' }
+    }
+
+    const existingUrls = new Set(bookmarksCache.map((b) => b.url))
+    let skipped = 0
+
+    const newFolders = []
+    const folderIdMap = new Map()
+    for (const f of parsed.folders) {
+      const newId = makeBookmarkId('f')
+      folderIdMap.set(f.id, newId)
+      newFolders.push({
+        id: newId,
+        name: f.name,
+        createdAt: f.createdAt || Date.now(),
+      })
+    }
+
+    const newBookmarks = []
+    for (const bm of parsed.bookmarks) {
+      if (existingUrls.has(bm.url)) {
+        skipped++
+        continue
+      }
+      existingUrls.add(bm.url)
+      newBookmarks.push({
+        id: makeBookmarkId('b'),
+        title: bm.title || bm.url,
+        url: bm.url,
+        favicon: bm.favicon || null,
+        createdAt: bm.createdAt || Date.now(),
+        folderId: bm.folderId ? (folderIdMap.get(bm.folderId) || null) : null,
+      })
+    }
+
+    foldersCache.push(...newFolders)
+    bookmarksCache.push(...newBookmarks)
+
+    saveBookmarks()
+    updateChromeHeightForBookmarks()
+    broadcastLibrary()
+
+    debugLog('Bookmarks', `Импортировано: ${newBookmarks.length} закладок, ${newFolders.length} папок, пропущено ${skipped} дубликатов`)
+
+    return {
+      ok: true,
+      imported: {
+        bookmarks: newBookmarks.length,
+        folders: newFolders.length,
+      },
+      skipped,
+    }
+  })
+
   ipcMain.handle('get-downloads', () => downloadsCache.slice())
   ipcMain.handle('get-downloads-path', () => ({
     path: getDefaultDownloadPath(),
@@ -1711,7 +2292,6 @@ app.whenReady().then(() => {
     return { ok: true, downloads: downloadsCache.slice() }
   })
 
-  // ============ Библиотека ============
   ipcMain.handle('get-library', () => serializeLibrary())
   ipcMain.handle('bookmark-current-page', () => {
     const active = getActiveTab()
@@ -1784,6 +2364,7 @@ app.whenReady().then(() => {
   ipcMain.handle('open-history-manager', () => openHistoryManager())
   ipcMain.handle('open-settings-page', () => openSettingsPage())
   ipcMain.handle('open-downloads-page', () => openDownloadsPage())
+  ipcMain.handle('open-cookies-page', () => openCookiesPage())
   ipcMain.handle('clear-all-bookmarks', () => {
     bookmarksCache = []
     foldersCache = []
@@ -1880,7 +2461,6 @@ app.whenReady().then(() => {
     return serializeLibrary()
   })
 
-  // ============ История ============
   ipcMain.handle('get-history', () => historyCache)
   ipcMain.handle('remove-history-entry', (_e, id) => {
     const idx = historyCache.findIndex(h => h.id === id)
@@ -1902,10 +2482,81 @@ app.whenReady().then(() => {
     if (url) createTab(url)
   })
 
-  // ============ Подсказки ============
+  // ============ COOKIES (IPC) ============
+  ipcMain.handle('get-cookies', async () => {
+    const ses = getSessionForCookies()
+    if (!ses) return []
+    try {
+      const cookies = await ses.cookies.get({})
+      return cookies.map(c => ({
+        name: c.name,
+        value: c.value,
+        domain: c.domain,
+        path: c.path,
+        secure: !!c.secure,
+        httpOnly: !!c.httpOnly,
+        session: !!c.session,
+        expirationDate: c.expirationDate || null,
+        sameSite: c.sameSite || 'unspecified',
+      }))
+    } catch (err) {
+      debugLog('Cookies', `Ошибка чтения: ${err.message}`)
+      return []
+    }
+  })
+
+  ipcMain.handle('remove-cookie', async (_e, payload) => {
+    const ses = getSessionForCookies()
+    if (!ses) return { ok: false, error: 'Сессия недоступна' }
+    const { domain, path: cookiePath, name, secure } = payload || {}
+    if (!domain || !name) return { ok: false, error: 'Не указан domain или name' }
+    try {
+      const url = buildCookieUrl({ domain, path: cookiePath, secure })
+      await ses.cookies.remove(url, name)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('remove-cookies-by-domain', async (_e, domain) => {
+    const ses = getSessionForCookies()
+    if (!ses) return { ok: false, removed: 0 }
+    if (!domain) return { ok: false, removed: 0 }
+    try {
+      const cookies = await ses.cookies.get({ domain })
+      let removed = 0
+      for (const c of cookies) {
+        try {
+          const url = buildCookieUrl(c)
+          await ses.cookies.remove(url, c.name)
+          removed++
+        } catch {}
+      }
+      return { ok: true, removed }
+    } catch (err) {
+      return { ok: false, error: err.message, removed: 0 }
+    }
+  })
+
+  ipcMain.handle('clear-all-cookies', async () => {
+    const ses = getSessionForCookies()
+    if (!ses) return { ok: false, error: 'Сессия недоступна' }
+    try {
+      await ses.clearStorageData({ storages: ['cookies'] })
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+  })
+
   ipcMain.handle('get-suggestions', async (_e, query) => {
     return await fetchSuggestions(query)
   })
+})
+
+app.on('before-quit', () => {
+  flushSessionSave()
 })
 
 app.on('window-all-closed', () => {

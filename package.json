@@ -1,7 +1,12 @@
 {
   "name": "browser-project",
   "version": "1.0.0",
-  "description": "Школьный проект по созданию браузера",
+  "description": "Кроссплатформенный браузер на Electron — итоговый проект по информатике",
+  "author": {
+    "name": "StasAks1",
+    "url": "https://github.com/StasAks1"
+  },
+  "license": "MIT",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -11,11 +16,9 @@
   "devDependencies": {
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
-    "electron-vite": "^5.0.0",
-    "typescript": "^7.0.2"
+    "electron-vite": "^5.0.0"
   },
   "allowScripts": {
-    "electron-winstaller@5.4.0": true,
     "esbuild@0.25.12": true,
     "esbuild@0.28.2": true
   }

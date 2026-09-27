@@ -2,6 +2,9 @@ const searchInput = document.getElementById('search-input')
 const sidebarNav = document.getElementById('sidebar-nav')
 const content = document.getElementById('content')
 const btnNewFolder = document.getElementById('btn-new-folder')
+const btnImport = document.getElementById('btn-import')
+const btnExport = document.getElementById('btn-export')
+const toastEl = document.getElementById('toast')
 
 const editModal = document.getElementById('edit-modal')
 const editForm = document.getElementById('edit-form')
@@ -48,6 +51,15 @@ function getFaviconUrl(bm) {
   const domain = getDomain(bm.url)
   if (!domain) return null
   return `https://icons.duckduckgo.com/ip3/${domain}.ico`
+}
+
+// ============ Toast ============
+let toastTimer = null
+function showToast(message) {
+  toastEl.textContent = message
+  toastEl.classList.add('visible')
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => toastEl.classList.remove('visible'), 2800)
 }
 
 const ICON_ALL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`
@@ -149,7 +161,7 @@ function renderContent() {
         }</div>
         <div class="empty-subtitle">${
           query ? 'Попробуйте изменить поисковый запрос.' :
-          (isEmpty ? 'Добавляйте страницы в закладки, нажимая на звёздочку в адресной строке.' :
+          (isEmpty ? 'Добавляйте страницы в закладки, нажимая на звёздочку в адресной строке. Или импортируйте HTML-файл из другого браузера.' :
           'Перетащите закладки в эту папку или создайте их заново.')
         }</div>
       </div>`
@@ -382,6 +394,48 @@ searchInput.addEventListener('input', () => {
   renderContent()
 })
 
+// ============ Импорт/экспорт ============
+btnExport.addEventListener('click', async () => {
+  btnExport.disabled = true
+  try {
+    const res = await window.browserAPI.exportBookmarks()
+    if (res.ok) {
+      showToast(`Экспортировано: ${res.count} закладок`)
+    } else if (res.canceled) {
+      // отменено
+    } else {
+      showToast(res.error || 'Не удалось экспортировать')
+    }
+  } catch (err) {
+    showToast('Ошибка экспорта')
+  } finally {
+    btnExport.disabled = false
+  }
+})
+
+btnImport.addEventListener('click', async () => {
+  btnImport.disabled = true
+  try {
+    const res = await window.browserAPI.importBookmarks()
+    if (res.ok) {
+      const parts = []
+      if (res.imported.bookmarks > 0) parts.push(`${res.imported.bookmarks} закладок`)
+      if (res.imported.folders > 0) parts.push(`${res.imported.folders} папок`)
+      let msg = parts.length ? `Импортировано: ${parts.join(', ')}` : 'Ничего не импортировано'
+      if (res.skipped > 0) msg += ` (пропущено ${res.skipped} дубликатов)`
+      showToast(msg)
+    } else if (res.canceled) {
+      // отменено
+    } else {
+      showToast(res.error || 'Не удалось импортировать')
+    }
+  } catch (err) {
+    showToast('Ошибка импорта')
+  } finally {
+    btnImport.disabled = false
+  }
+})
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (editModal.classList.contains('visible')) closeEditModal()
@@ -403,18 +457,4 @@ window.browserAPI.getLibrary().then((data) => {
   renderContent()
 })
 
-// ============ Тема и акцент ============
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark'
-}
-
-function applyAccent(data) {
-  if (!data) return
-  document.documentElement.style.setProperty('--accent', data.color)
-  document.documentElement.style.setProperty('--accent-hover', data.hover)
-}
-
-window.browserAPI.onThemeChanged((theme) => applyTheme(theme))
-window.browserAPI.onAccentChanged((data) => applyAccent(data))
-window.browserAPI.getTheme().then((theme) => applyTheme(theme))
-window.browserAPI.getAccent().then((data) => applyAccent(data))
+// Тема и акцент: см. shared/theme.js

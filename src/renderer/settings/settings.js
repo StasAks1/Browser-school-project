@@ -6,6 +6,7 @@ let currentTheme = 'dark'
 let currentAccent = 'orange'
 let accentOptions = []
 let downloadsInfo = { path: '', askWhereToSave: false, isDefault: true }
+let restoreSessionEnabled = true
 
 // ============ Инициализация ============
 async function init() {
@@ -13,6 +14,7 @@ async function init() {
   const settings = await window.browserAPI.getSettings()
   currentTheme = settings.theme || 'dark'
   currentAccent = settings.accent || 'orange'
+  restoreSessionEnabled = settings.restoreSession !== false
   accentOptions = await window.browserAPI.getAccentOptions()
 
   renderSection('appearance')
@@ -26,10 +28,10 @@ async function init() {
   })
 }
 
-// ============ Рендер секции ============
 function renderSection(section) {
   if (section === 'appearance') renderAppearance()
   else if (section === 'downloads') renderDownloadsSettings()
+  else if (section === 'privacy') renderPrivacy()
   else if (section === 'about') renderAbout()
 }
 
@@ -45,7 +47,7 @@ function renderAppearance() {
 
   content.innerHTML = `
     <div class="section-title">Внешний вид</div>
-    <div class="section-subtitle">Настройте оформление браузера — светлая, тёмная или автоматически по системной теме macOS.</div>
+    <div class="section-subtitle">Настройте оформление браузера — светлая, тёмная или автоматически по системной теме.</div>
 
     <div class="setting-group">
       <div class="setting-row column">
@@ -117,7 +119,7 @@ function renderAppearance() {
   })
 }
 
-// ============ Загрузки (раздел настроек) ============
+// ============ Загрузки ============
 async function renderDownloadsSettings() {
   downloadsInfo = await window.browserAPI.getDownloadsPath()
 
@@ -170,6 +172,67 @@ async function renderDownloadsSettings() {
 
   document.getElementById('ask-switch').addEventListener('change', async (e) => {
     downloadsInfo = await window.browserAPI.setAskWhereToSave(e.target.checked)
+  })
+}
+
+// ============ Приватность ============
+function renderPrivacy() {
+  content.innerHTML = `
+    <div class="section-title">Приватность</div>
+    <div class="section-subtitle">Управление локальными данными и поведением при запуске.</div>
+
+    <div class="setting-group">
+      <div class="setting-row">
+        <div class="setting-body">
+          <div class="setting-label">Восстанавливать сессию при запуске</div>
+          <div class="setting-desc">Открывать вкладки, которые были открыты в прошлый раз. Внутренние страницы браузера не сохраняются.</div>
+        </div>
+        <div class="setting-control">
+          <label class="switch">
+            <input type="checkbox" id="restore-session-switch" ${restoreSessionEnabled ? 'checked' : ''}>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-row column">
+        <div class="setting-label">Cookie-менеджер</div>
+        <div class="setting-desc" style="margin-top: 8px;">
+          Просмотр и удаление cookie, которые сайты сохранили в браузере.
+          Все cookie хранятся <strong>только на вашем устройстве</strong> —
+          браузер не сохраняет их в свои файлы, не логирует содержимое и никуда не отправляет.
+          Это соответствует принципу «локальной обработки» и не требует статуса оператора персональных данных (152-ФЗ).
+        </div>
+        <div class="setting-control" style="margin-top: 14px;">
+          <button id="open-cookies" class="btn-dl">Открыть менеджер cookie</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-row column">
+        <div class="setting-label">Хранение данных</div>
+        <div class="setting-desc" style="margin-top: 8px; line-height: 1.6;">
+          <strong>Что и где хранится:</strong><br>
+          • Закладки, история, настройки, список загрузок — в локальной папке профиля приложения (userData)<br>
+          • Сессия (список открытых вкладок) — в userData/session.json, только если включено восстановление<br>
+          • Cookie, кэш, localStorage сайтов — во встроенной сессии Chromium<br>
+          • Всё это находится исключительно на вашем компьютере и не передаётся разработчику или третьим лицам
+        </div>
+      </div>
+    </div>
+  `
+
+  document.getElementById('open-cookies').addEventListener('click', () => {
+    window.browserAPI.openCookiesPage()
+  })
+
+  document.getElementById('restore-session-switch').addEventListener('change', async (e) => {
+    const value = e.target.checked
+    const res = await window.browserAPI.setSessionSetting(value)
+    restoreSessionEnabled = res.restoreSession
   })
 }
 
@@ -244,8 +307,8 @@ function renderAbout() {
         <div class="setting-label">Итоговый проект</div>
         <div class="setting-desc" style="margin-top: 8px; line-height: 1.6;">
           Учебный проект по информатике. Кроссплатформенный браузер на Electron + Vite
-          с поддержкой вкладок, закладок, папок, истории, загрузок и кастомных разрешений.
-          Все данные хранятся локально на устройстве пользователя.
+          с поддержкой вкладок, закладок, папок, истории, загрузок, cookie-менеджера,
+          восстановления сессии и кастомных разрешений. Все данные хранятся локально на устройстве пользователя.
         </div>
       </div>
     </div>
@@ -259,19 +322,10 @@ function escapeHtml(str) {
   }[c]))
 }
 
-// ============ Тема и акцент ============
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark'
-}
-
-function applyAccent(data) {
-  if (!data) return
-  document.documentElement.style.setProperty('--accent', data.color)
-  document.documentElement.style.setProperty('--accent-hover', data.hover)
-}
-
-window.browserAPI.onThemeChanged((theme) => {
-  applyTheme(theme)
+// ============ Тема и акцент (синхронизация UI) ============
+// Применение темы и акцента к DOM делает shared/theme.js.
+// Здесь только обновляем активные кнопки при изменении.
+window.themeManager.onTheme(() => {
   const themeOptions = document.getElementById('theme-options')
   if (themeOptions) {
     themeOptions.querySelectorAll('.theme-option').forEach((x) => {
@@ -280,9 +334,8 @@ window.browserAPI.onThemeChanged((theme) => {
   }
 })
 
-window.browserAPI.onAccentChanged((data) => {
-  applyAccent(data)
-  currentAccent = data.name
+window.themeManager.onAccent((data) => {
+  if (data && data.name) currentAccent = data.name
   const accentBox = document.getElementById('accent-options')
   if (accentBox) {
     accentBox.querySelectorAll('.accent-option').forEach((x) => {
@@ -290,9 +343,6 @@ window.browserAPI.onAccentChanged((data) => {
     })
   }
 })
-
-window.browserAPI.getTheme().then((theme) => applyTheme(theme))
-window.browserAPI.getAccent().then((data) => applyAccent(data))
 
 // ============ Запуск ============
 init()
