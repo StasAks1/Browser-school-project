@@ -50,16 +50,45 @@
 
 | Платформа | Формат | Где собирается |
 |---|---|---|
-| macOS | `.dmg` | только на macOS |
-| Windows | `.exe` (NSIS) | только на Windows |
-| Linux | `.AppImage` / `.deb` | только на Linux |
+| macOS | `.dmg`, `.zip` | только на macOS |
+| Windows | `.exe` (NSIS), portable `.exe` | только на Windows |
+| Linux | `.AppImage`, `.deb` | только на Linux |
 
-**Обходное решение:** GitHub Actions запускает три виртуальные машины параллельно и собирает все три формата автоматически при пуше тега.
+### Локальная сборка
 
 ```bash
-# Локально на Mac
+# Только на macOS
 npm run dist:mac
+
+# Только на Windows
+npm run dist:win
+
+# Только на Linux
+npm run dist:linux
 ```
+
+Все три команды требуют соответствующей ОС — собрать `.exe` на Mac невозможно.
+
+### GitHub Actions (CI)
+
+При пуше тега `v*` GitHub Actions автоматически:
+
+1. Запускает **3 виртуальные машины** параллельно (`macos-latest`, `windows-latest`, `ubuntu-latest`)
+2. На каждой устанавливает Node.js, npm-зависимости
+3. Запускает `npm run dist:mac` / `dist:win` / `dist:linux`
+4. Собирает все артефакты в **GitHub Releases**
+
+**Что это даёт:**
+
+- Три платформы собираются за 10–15 минут без твоего участия
+- Готовые установщики доступны для скачивания в Releases
+- Кроссплатформенность подтверждается реальными файлами
+
+Конфигурация workflow — в файле `.github/workflows/build.yml`. Логика:
+
+- `strategy.matrix` — три ОС
+- `npm run ${{ matrix.script }}` — своя команда для каждой
+- `softprops/action-gh-release` — публикация в Releases
 
 ## Где тестировалось
 

@@ -175,14 +175,72 @@ DEBUG=1 npm run dev
 
 ## Сборка релиза
 
-```bash
-# 1. Обнови версию в package.json
-# 2. Обнови документацию, если нужно
-# 3. Собери локально для проверки
-npm run dist:mac
+### Локально (для проверки)
 
-# 4. Отправь тег — GitHub Actions соберёт все три платформы
+1. Обнови `version` в `package.json`
+2. Обнови документацию, если нужно
+3. Собери для своей платформы:
+
+```bash
+npm run dist:mac       # на macOS
+npm run dist:win       # на Windows
+npm run dist:linux     # на Linux
+```
+
+Готовые файлы появятся в `dist/`.
+
+### Через GitHub Actions (рекомендуется)
+
+**Что происходит:**
+- При пуше тега `v*` GitHub запускает 3 виртуалки: macOS, Windows, Linux
+- Каждая собирает свой установщик (`.dmg`, `.exe`, `.AppImage`, `.deb`)
+- Файлы автоматически публикуются в **Releases** репозитория
+
+**Как запустить:**
+
+```bash
+# 1. Убедиться, что всё закоммичено
+git status
+
+# 2. Обновить version в package.json (например, 1.0.0 → 1.0.1)
+
+# 3. Коммит + push
+git add .
+git commit -m "Release v1.0.1"
+git push
+
+# 4. Создать и запушить тег
 git tag v1.0.1
+git push --tags
+```
+
+**Как следить:**
+- Открой `https://github.com/StasAks1/Browser-school-project/actions`
+- Увидишь запущенный workflow `Build releases`
+- Через 10–15 минут все job'ы станут зелёными
+
+**Где скачать:**
+- `https://github.com/StasAks1/Browser-school-project/releases`
+- Раздел `v1.0.1` — все файлы для трёх платформ
+
+### Если сборка упала
+
+1. Открой страницу Actions
+2. Кликни на упавший job
+3. Раскрой упавший шаг (красный крестик)
+4. Смотри последние 20–30 строк лога — там ошибка
+5. Фикси код → новый тег с другим именем (например, `v1.0.2`)
+
+### Повторный запуск без нового тега
+
+Если нужно перезапустить CI на том же коде:
+- Открой Actions → выбери workflow → **Re-run all jobs**
+- Или удали тег и создай заново:
+
+```bash
+git tag -d v1.0.0
+git push origin :refs/tags/v1.0.0
+git tag v1.0.0
 git push --tags
 ```
 

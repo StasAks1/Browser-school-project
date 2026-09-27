@@ -4,6 +4,10 @@
 
 ```
 browser_school_project/
+├── .github/                        GitHub Actions
+│   └── workflows/
+│       └── build.yml               CI: сборка под 3 платформы
+│
 ├── build/                          Иконки приложения (коммитятся!)
 │   ├── icon.svg                    Исходник
 │   ├── icon.png                    1024×1024 для dev-режима
@@ -22,50 +26,47 @@ browser_school_project/
 │   └── DEVELOPMENT.md
 │
 ├── src/
-│   ├── main/                       Main-процесс (Node.js)
-│   │   ├── index.js                Точка входа, окно, IPC, вкладки
-│   │   ├── shortcuts.js            Хоткеи
-│   │   ├── menu.js                 Системное меню
-│   │   ├── context-menu.js         Меню правого клика на странице
-│   │   ├── reader.js               Reader Mode (Readability)
-│   │   ├── popup.js                Обработка window.open
-│   │   ├── private.js              Приватная сессия
-│   │   ├── session.js              Восстановление сессии
-│   │   ├── bookmarks-io.js         Импорт/экспорт закладок
-│   │   ├── tracker-list.js         Список трекерных доменов
-│   │   ├── tracker-blocker.js      Блокировка трекеров
-│   │   ├── debug.js                Логи
-│   │   └── debug.config.js         Флаги отладки
+│   ├── main/
+│   │   ├── index.js
+│   │   ├── shortcuts.js
+│   │   ├── menu.js
+│   │   ├── context-menu.js
+│   │   ├── reader.js
+│   │   ├── popup.js
+│   │   ├── private.js
+│   │   ├── session.js
+│   │   ├── bookmarks-io.js
+│   │   ├── tracker-list.js
+│   │   ├── tracker-blocker.js
+│   │   ├── debug.js
+│   │   └── debug.config.js
 │   │
-│   ├── preload/                    Preload-скрипт
-│   │   └── index.js                contextBridge, экспорт API
+│   ├── preload/
+│   │   └── index.js
 │   │
-│   └── renderer/                   Страницы интерфейса
+│   └── renderer/
 │       ├── shared/
-│       │   ├── theme.js            Общая логика темы
-│       │   ├── tooltip.js          Кастомные tooltips
+│       │   ├── theme.js
+│       │   ├── tooltip.js
 │       │   └── tooltip.css
 │       │
-│       ├── index/                  Chrome UI (вкладки, адресная строка)
-│       │   ├── index.html
-│       │   ├── index.css
-│       │   └── index.js
-│       │
-│       ├── startpage/              Стартовая страница
-│       ├── bookmarks/              Менеджер закладок
-│       ├── history/                История
-│       ├── downloads/              Загрузки
-│       ├── cookies/                Cookie-менеджер
-│       ├── reader/                 Reader Mode
-│       ├── settings/               Настройки
-│       ├── statusbar/              Status bar (URL при наведении)
-│       ├── error/                  Страница ошибок
-│       ├── warning/                Предупреждение HTTP
-│       ├── popup/                  Попап закладки
-│       └── permission/             Диалог разрешений
+│       ├── index/
+│       ├── startpage/
+│       ├── bookmarks/
+│       ├── history/
+│       ├── downloads/
+│       ├── cookies/
+│       ├── reader/
+│       ├── settings/
+│       ├── statusbar/
+│       ├── error/
+│       ├── warning/
+│       ├── popup/
+│       └── permission/
 │
-├── electron.vite.config.js         Конфиг сборки
+├── electron.vite.config.js
 ├── package.json
+├── package-lock.json
 ├── README.md
 ├── LICENSE
 ├── THIRD_PARTY_LICENSES
