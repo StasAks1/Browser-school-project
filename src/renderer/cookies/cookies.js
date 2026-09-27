@@ -1,7 +1,9 @@
 const content = document.getElementById('content')
 const searchInput = document.getElementById('search-input')
 const btnClearAll = document.getElementById('btn-clear-all')
+const btnAdd = document.getElementById('btn-add')
 const statsEl = document.getElementById('stats')
+const toastEl = document.getElementById('toast')
 
 const confirmModal = document.getElementById('confirm-modal')
 const confirmTitle = document.getElementById('confirm-title')
@@ -9,14 +11,35 @@ const confirmText = document.getElementById('confirm-text')
 const confirmCancel = document.getElementById('confirm-cancel')
 const confirmOk = document.getElementById('confirm-ok')
 
+const cookieModal = document.getElementById('cookie-modal')
+const cookieModalTitle = document.getElementById('cookie-modal-title')
+const cookieForm = document.getElementById('cookie-form')
+const cookieName = document.getElementById('cookie-name')
+const cookieDomain = document.getElementById('cookie-domain')
+const cookieValue = document.getElementById('cookie-value')
+const cookiePath = document.getElementById('cookie-path')
+const cookieSameSite = document.getElementById('cookie-samesite')
+const cookieExpires = document.getElementById('cookie-expires')
+const cookieSession = document.getElementById('cookie-session')
+const cookieSecure = document.getElementById('cookie-secure')
+const cookieHttpOnly = document.getElementById('cookie-httponly')
+const cookieCancel = document.getElementById('cookie-cancel')
+const cookieSubmit = document.getElementById('cookie-submit')
+
 let allCookies = []
 let query = ''
 let confirmResolve = null
 
+// Режим модалки: 'create' | 'edit'
+let cookieModalMode = 'create'
+let editingCookie = null // при mode === 'edit' — старый объект cookie
+
 const ICON_CHEVRON = `<svg class="domain-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`
 const ICON_TRASH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`
 const ICON_EYE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`
-const ICON_TRASH_SMALL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>`
+const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`
+const ICON_COPY = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
+const ICON_X = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>`
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
@@ -48,6 +71,16 @@ function getSameSiteLabel(sameSite) {
   }
 }
 
+// ============ Toast ============
+let toastTimer = null
+function showToast(message) {
+  toastEl.textContent = message
+  toastEl.classList.add('visible')
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => toastEl.classList.remove('visible'), 2200)
+}
+
+// ============ Рендер ============
 function renderStats() {
   const total = allCookies.length
   const domains = new Set(allCookies.map(c => c.domain)).size
@@ -185,13 +218,30 @@ function createCookieItem(cookie) {
     </div>
     <div class="cookie-actions">
       <button class="item-btn" data-action="reveal" title="Показать/скрыть значение">${ICON_EYE}</button>
-      <button class="item-btn danger" data-action="delete" title="Удалить cookie">${ICON_TRASH_SMALL}</button>
+      <button class="item-btn" data-action="copy" title="Копировать значение">${ICON_COPY}</button>
+      <button class="item-btn" data-action="edit" title="Редактировать">${ICON_EDIT}</button>
+      <button class="item-btn danger" data-action="delete" title="Удалить cookie">${ICON_X}</button>
     </div>
   `
 
   el.querySelector('[data-action="reveal"]').addEventListener('click', (e) => {
     e.stopPropagation()
     el.classList.toggle('revealed')
+  })
+
+  el.querySelector('[data-action="copy"]').addEventListener('click', async (e) => {
+    e.stopPropagation()
+    try {
+      await navigator.clipboard.writeText(cookie.value || '')
+      showToast('Значение скопировано')
+    } catch {
+      showToast('Не удалось скопировать')
+    }
+  })
+
+  el.querySelector('[data-action="edit"]').addEventListener('click', (e) => {
+    e.stopPropagation()
+    openCookieModal('edit', cookie)
   })
 
   el.querySelector('[data-action="delete"]').addEventListener('click', async (e) => {
@@ -208,6 +258,7 @@ function createCookieItem(cookie) {
   return el
 }
 
+// ============ Модалка подтверждения ============
 function confirmAction(title, text) {
   return new Promise((resolve) => {
     confirmTitle.textContent = title
@@ -230,10 +281,130 @@ confirmCancel.addEventListener('click', () => closeConfirm(false))
 confirmOk.addEventListener('click', () => closeConfirm(true))
 confirmModal.addEventListener('click', (e) => { if (e.target === confirmModal) closeConfirm(false) })
 
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && confirmModal.classList.contains('visible')) closeConfirm(false)
+// ============ Модалка cookie ============
+function unixToLocalInput(ts) {
+  if (!ts) return ''
+  const d = new Date(ts * 1000)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function localInputToUnix(value) {
+  if (!value) return null
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return null
+  return Math.floor(d.getTime() / 1000)
+}
+
+function updateSessionCheckboxState() {
+  const isSession = cookieSession.checked
+  cookieExpires.disabled = isSession
+  if (isSession) cookieExpires.value = ''
+}
+
+cookieSession.addEventListener('change', updateSessionCheckboxState)
+
+function openCookieModal(mode, cookie) {
+  cookieModalMode = mode
+  editingCookie = mode === 'edit' ? cookie : null
+
+  if (mode === 'edit') {
+    cookieModalTitle.textContent = 'Редактировать cookie'
+    cookieSubmit.textContent = 'Сохранить'
+    cookieName.value = cookie.name || ''
+    cookieDomain.value = cookie.domain || ''
+    cookieValue.value = cookie.value || ''
+    cookiePath.value = cookie.path || '/'
+    cookieSameSite.value = cookie.sameSite || 'unspecified'
+    cookieSecure.checked = !!cookie.secure
+    cookieHttpOnly.checked = !!cookie.httpOnly
+    cookieSession.checked = !!cookie.session
+    cookieExpires.value = cookie.expirationDate ? unixToLocalInput(cookie.expirationDate) : ''
+
+    // При редактировании имя/домен не меняем — это уникальный идентификатор cookie
+    cookieName.disabled = true
+    cookieDomain.disabled = true
+    cookiePath.disabled = true
+  } else {
+    cookieModalTitle.textContent = 'Новый cookie'
+    cookieSubmit.textContent = 'Создать'
+    cookieName.value = ''
+    cookieDomain.value = ''
+    cookieValue.value = ''
+    cookiePath.value = '/'
+    cookieSameSite.value = 'unspecified'
+    cookieSecure.checked = false
+    cookieHttpOnly.checked = false
+    cookieSession.checked = true
+    cookieExpires.value = ''
+
+    cookieName.disabled = false
+    cookieDomain.disabled = false
+    cookiePath.disabled = false
+  }
+
+  updateSessionCheckboxState()
+  cookieModal.classList.add('visible')
+  setTimeout(() => {
+    if (mode === 'create') cookieName.focus()
+    else cookieValue.focus()
+  }, 30)
+}
+
+function closeCookieModal() {
+  cookieModal.classList.remove('visible')
+  editingCookie = null
+}
+
+cookieCancel.addEventListener('click', closeCookieModal)
+cookieModal.addEventListener('click', (e) => { if (e.target === cookieModal) closeCookieModal() })
+
+cookieForm.addEventListener('submit', async (e) => {
+  e.preventDefault()
+
+  const name = cookieName.value.trim()
+  const domain = cookieDomain.value.trim()
+  const value = cookieValue.value
+  const path = cookiePath.value.trim() || '/'
+  const sameSite = cookieSameSite.value
+  const secure = cookieSecure.checked
+  const httpOnly = cookieHttpOnly.checked
+  const isSession = cookieSession.checked
+  const expirationDate = isSession ? null : localInputToUnix(cookieExpires.value)
+
+  if (!name) { showToast('Укажите имя cookie'); return }
+  if (!domain) { showToast('Укажите домен'); return }
+
+  if (cookieModalMode === 'edit') {
+    const res = await window.browserAPI.updateCookie({
+      oldCookie: editingCookie,
+      newValue: value,
+    })
+    if (!res.ok) { showToast(res.error || 'Не удалось сохранить'); return }
+    showToast('Cookie обновлён')
+  } else {
+    const res = await window.browserAPI.setCookie({
+      name, value, domain, path,
+      secure, httpOnly, sameSite, expirationDate,
+    })
+    if (!res.ok) { showToast(res.error || 'Не удалось создать cookie'); return }
+    showToast('Cookie создан')
+  }
+
+  closeCookieModal()
+  await reloadCookies()
 })
 
+btnAdd.addEventListener('click', () => openCookieModal('create'))
+
+// ============ Глобальный Escape ============
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return
+  if (confirmModal.classList.contains('visible')) closeConfirm(false)
+  else if (cookieModal.classList.contains('visible')) closeCookieModal()
+})
+
+// ============ Загрузка данных ============
 async function reloadCookies() {
   allCookies = await window.browserAPI.getCookies() || []
   render()
@@ -255,6 +426,5 @@ btnClearAll.addEventListener('click', async () => {
   await reloadCookies()
 })
 
+// ============ Старт ============
 reloadCookies()
-
-// Тема и акцент: см. shared/theme.js

@@ -83,17 +83,19 @@ contextBridge.exposeInMainWorld('browserAPI', {
   openUrlFromHistory: (id) => ipcRenderer.invoke('open-url-from-history', id),
   openUrlInNewTab: (url) => ipcRenderer.invoke('open-url-in-new-tab', url),
 
+  // ============ Cookie ============
   getCookies: () => ipcRenderer.invoke('get-cookies'),
   removeCookie: (payload) => ipcRenderer.invoke('remove-cookie', payload),
   removeCookiesByDomain: (domain) => ipcRenderer.invoke('remove-cookies-by-domain', domain),
   clearAllCookies: () => ipcRenderer.invoke('clear-all-cookies'),
   openCookiesPage: () => ipcRenderer.invoke('open-cookies-page'),
+  setCookie: (payload) => ipcRenderer.invoke('set-cookie', payload),
+  updateCookie: (payload) => ipcRenderer.invoke('update-cookie', payload),
 
   getSessionSetting: () => ipcRenderer.invoke('get-session-setting'),
   setSessionSetting: (value) => ipcRenderer.invoke('set-session-setting', value),
   clearSession: () => ipcRenderer.invoke('clear-session'),
 
-  // ============ Импорт/экспорт закладок ============
   exportBookmarks: () => ipcRenderer.invoke('export-bookmarks'),
   importBookmarks: () => ipcRenderer.invoke('import-bookmarks'),
 

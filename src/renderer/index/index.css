@@ -95,6 +95,20 @@ body[data-platform="linux"] .tab-strip {
   margin-right: -6px; pointer-events: none;
 }
 
+/* ============ Выгруженная (sleeping) вкладка ============ */
+.tab.unloaded {
+  opacity: 0.55;
+}
+.tab.unloaded:hover {
+  opacity: 0.8;
+}
+.tab.unloaded .tab-favicon img {
+  filter: grayscale(0.4);
+}
+.tab.unloaded .tab-favicon span {
+  opacity: 0.6;
+}
+
 .tab-favicon {
   width: 14px; height: 14px; display: flex;
   align-items: center; justify-content: center;

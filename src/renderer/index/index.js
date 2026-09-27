@@ -26,6 +26,10 @@ window.browserAPI.getPlatform().then((platform) => {
   document.body.dataset.platform = platform || 'unknown'
 })
 
+// ============ Тема и акцент ============
+// Применение темы и акцента полностью управляется через shared/theme.js.
+// Если нужно реагировать на смену темы — используй window.themeManager.onTheme(cb).
+
 // ============ Индикатор безопасности ============
 function setSecurityState(state) {
   securityIndicator.dataset.state = state || 'unknown'
@@ -163,9 +167,9 @@ function renderTabs() {
 
   for (const tab of tabsState) {
     const el = document.createElement('div')
-    el.className = 'tab' + (tab.isActive ? ' active' : '')
+    el.className = 'tab' + (tab.isActive ? ' active' : '') + (tab.isUnloaded ? ' unloaded' : '')
     el.dataset.tabId = String(tab.id)
-    el.title = tab.title || ''
+    el.title = tab.isUnloaded ? `${tab.title || ''} (выгружена)` : (tab.title || '')
 
     const faviconHtml = tab.favicon
       ? `<img src="${escapeHtml(tab.favicon)}" onerror="this.style.display='none';this.parentElement.innerHTML='<span>${escapeHtml(getInitial(tab.title))}</span>'">`
@@ -482,9 +486,3 @@ window.browserAPI.onShortcutFocusAddress(() => {
 window.browserAPI.onShortcutBookmark(() => {
   btnStar.click()
 })
-
-// ============================================================
-// Тема и акцент теперь управляются через shared/theme.js.
-// Применение к DOM происходит автоматически при загрузке страницы.
-// Если нужно реагировать на изменения — используй window.themeManager.onTheme/onAccent.
-// ============================================================

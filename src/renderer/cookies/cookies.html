@@ -21,7 +21,10 @@
     <header class="header">
       <div class="title-row">
         <h1 class="title">Cookie</h1>
-        <button id="btn-clear-all" class="btn-clear">Удалить все</button>
+        <div class="header-actions">
+          <button id="btn-add" class="btn-add">+ Добавить cookie</button>
+          <button id="btn-clear-all" class="btn-clear">Удалить все</button>
+        </div>
       </div>
       <div class="search-wrapper">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -39,7 +42,7 @@
       <div class="notice-text">
         Все cookie хранятся <strong>только на вашем устройстве</strong> во встроенной сессии Chromium.
         Браузер не сохраняет их в свои файлы, не логирует содержимое и никуда не отправляет.
-        Вы можете удалить любые cookie в любой момент — это ваше локальное право.
+        Вы можете добавить, изменить или удалить любые cookie — это ваше локальное право.
       </div>
     </div>
 
@@ -48,6 +51,7 @@
     <main class="content" id="content"></main>
   </div>
 
+  <!-- Модалка подтверждения -->
   <div id="confirm-modal" class="modal-overlay">
     <div class="modal">
       <h2 class="modal-title" id="confirm-title">Подтвердите действие</h2>
@@ -58,6 +62,75 @@
       </div>
     </div>
   </div>
+
+  <!-- Модалка добавления/редактирования cookie -->
+  <div id="cookie-modal" class="modal-overlay">
+    <div class="modal modal-wide">
+      <h2 class="modal-title" id="cookie-modal-title">Новый cookie</h2>
+      <form id="cookie-form" class="modal-form">
+        <div class="form-row">
+          <label class="form-label">
+            Имя (name)
+            <input type="text" id="cookie-name" class="form-input" autocomplete="off" required>
+          </label>
+          <label class="form-label">
+            Домен
+            <input type="text" id="cookie-domain" class="form-input" placeholder="example.com" autocomplete="off" required>
+          </label>
+        </div>
+
+        <label class="form-label">
+          Значение (value)
+          <textarea id="cookie-value" class="form-input form-textarea" autocomplete="off" rows="3"></textarea>
+        </label>
+
+        <div class="form-row">
+          <label class="form-label">
+            Путь (path)
+            <input type="text" id="cookie-path" class="form-input" value="/" autocomplete="off">
+          </label>
+          <label class="form-label">
+            SameSite
+            <select id="cookie-samesite" class="form-input">
+              <option value="unspecified">Unspecified</option>
+              <option value="lax">Lax</option>
+              <option value="strict">Strict</option>
+              <option value="no_restriction">None (no_restriction)</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">
+            Истекает
+            <input type="datetime-local" id="cookie-expires" class="form-input">
+          </label>
+          <label class="form-checkbox">
+            <input type="checkbox" id="cookie-session">
+            <span>Сессионный (до закрытия браузера)</span>
+          </label>
+        </div>
+
+        <div class="form-row">
+          <label class="form-checkbox">
+            <input type="checkbox" id="cookie-secure">
+            <span>Secure (только HTTPS)</span>
+          </label>
+          <label class="form-checkbox">
+            <input type="checkbox" id="cookie-httponly">
+            <span>HttpOnly (недоступен из JS)</span>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="cookie-cancel" class="btn btn-secondary">Отмена</button>
+          <button type="submit" id="cookie-submit" class="btn btn-primary">Создать</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
 
   <script src="../shared/theme.js"></script>
   <script src="cookies.js"></script>
