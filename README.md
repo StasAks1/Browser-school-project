@@ -1,5 +1,9 @@
 # Browser Project
 
+[![Build](https://github.com/StasAks1/Browser-school-project/actions/workflows/build.yml/badge.svg)](https://github.com/StasAks1/Browser-school-project/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)](docs/CROSS-PLATFORM.md)
+
 **Кроссплатформенный браузер на Electron** — итоговый проект по информатике, 10 класс.
 
 Собственный Chrome UI в стиле Safari, вкладки, закладки с папками, история, загрузки, cookie-менеджер, приватный режим, режим чтения, блокировка трекеров. Все данные хранятся **только локально** на устройстве пользователя.
@@ -141,6 +145,17 @@ npm run dist:linux
 Готовые установщики появятся в папке `dist/`.
 
 Сборка под каждую платформу требует соответствующей ОС (кроме случая с GitHub Actions, где все три собираются автоматически).
+
+### Автоматическая сборка
+
+Проект настроен на **GitHub Actions**: при пуше тега `v*` автоматически собираются `.dmg`, `.exe` и `.AppImage` на трёх виртуалках (macOS, Windows, Linux) и публикуются в [Releases](https://github.com/StasAks1/Browser-school-project/releases).
+
+```bash
+git tag v1.0.0
+git push --tags
+```
+
+Через ~15 минут готовые установщики появятся в разделе Releases.
 
 ---
 

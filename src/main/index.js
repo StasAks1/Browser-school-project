@@ -2179,7 +2179,9 @@ function buildCookieUrl(cookie) {
 app.whenReady().then(() => {
   debugStartupBanner()
 
-  if (process.platform === 'darwin' && app.dock) {
+  // Иконку Dock вручную ставим только в dev-режиме.
+  // В собранном приложении её подставляет electron-builder.
+  if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
     try {
       app.dock.setIcon(path.join(__dirname, '../../build/icon.png'))
     } catch (e) {

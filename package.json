@@ -89,15 +89,10 @@
     "linux": {
       "icon": "build/icons",
       "category": "Network",
-      "synopsis": "Кроссплатформенный браузер",
-      "description": "Учебный проект — браузер на Electron",
       "target": [
         { "target": "AppImage", "arch": ["x64"] },
         { "target": "deb", "arch": ["x64"] }
-      ],
-      "desktop": {
-        "StartupWMClass": "Browser Project"
-      }
+      ]
     }
   },
   "allowScripts": {

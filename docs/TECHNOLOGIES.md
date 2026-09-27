@@ -33,7 +33,7 @@
 **Модульная система:**
 - `main` — ESM (`import`/`export`)
 - `preload` — CJS (`require`) — требование Electron
-- `renderer` — ESM
+- `renderer` — ESM через `<script type="module">`
 
 ### HTML + CSS
 Без фреймворков (React, Vue, Svelte). Почему:
@@ -60,13 +60,14 @@
 
 ## Сторонние библиотеки
 
-| Библиотека | Версия | Лицензия | Для чего |
+| Библиотека / сервис | Версия | Лицензия | Для чего |
 |---|---|---|---|
 | Electron | 44.x | MIT | Фреймворк |
 | electron-vite | 5.x | MIT | Сборщик |
 | Vite | 7.x | MIT | Бандлер |
 | electron-builder | 26.x | MIT | Упаковщик установщиков |
 | @mozilla/readability | 0.6.x | Apache 2.0 | Reader Mode |
+| GitHub Actions | — | бесплатно для public repo | CI/CD, автосборка |
 
 Полный список с текстами лицензий — см. [THIRD_PARTY_LICENSES](../THIRD_PARTY_LICENSES).
 
