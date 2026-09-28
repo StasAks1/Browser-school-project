@@ -231,20 +231,34 @@ export function buildApplicationMenu(actions, opts = {}) {
   // ============================================================
   // ============ History =======================================
   // ============================================================
+  const historySubmenu = [
+    {
+      label: 'Показать историю',
+      accelerator: isMac ? 'Cmd+Y' : 'Ctrl+H',
+      click: safeCall(actions.openHistory),
+    },
+    {
+      label: 'Загрузки',
+      accelerator: 'CmdOrCtrl+J',
+      click: safeCall(actions.openDownloads),
+    },
+    { type: 'separator' },
+    {
+      label: 'Восстановить последнюю вкладку',
+      accelerator: 'CmdOrCtrl+Shift+T',
+      click: safeCall(actions.restoreTab),
+    },
+    {
+      label: 'Недавно закрытые',
+      submenu: typeof actions.recentlyClosedItems === 'function'
+        ? actions.recentlyClosedItems()
+        : [{ label: 'Недоступно', enabled: false }],
+    },
+  ]
+
   template.push({
     label: 'История',
-    submenu: [
-      {
-        label: 'Показать историю',
-        accelerator: isMac ? 'Cmd+Y' : 'Ctrl+H',
-        click: safeCall(actions.openHistory),
-      },
-      {
-        label: 'Загрузки',
-        accelerator: 'CmdOrCtrl+J',
-        click: safeCall(actions.openDownloads),
-      },
-    ],
+    submenu: historySubmenu,
   })
 
   // ============================================================

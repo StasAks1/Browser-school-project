@@ -17,8 +17,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 app.commandLine.appendSwitch('disable-features', 'HttpsFirstModeV2,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable')
 // Ограничение размера дискового кэша Chromium — 100 МБ.
-// По умолчанию Chromium может занимать несколько ГБ, что нежелательно
-// для приватности (старые данные сайтов долго лежат на диске).
 app.commandLine.appendSwitch('disk-cache-size', String(100 * 1024 * 1024))
 
 const CHROME_HEIGHT_BASE = 80
@@ -64,6 +62,8 @@ const ACCENT_COLORS = {
 }
 const ACCENT_DEFAULT = 'orange'
 
+const ALL_TOOLBAR_BUTTONS = ['reader', 'find', 'downloads', 'history', 'reload', 'home']
+
 let mainWindow = null
 let chromeView = null
 let statusBarView = null
@@ -75,8 +75,6 @@ let bookmarksCache = []
 let foldersCache = []
 let historyCache = []
 let downloadsCache = []
-const ALL_TOOLBAR_BUTTONS = ['reader', 'find', 'downloads', 'history', 'reload', 'home']
-
 let settingsCache = {
   theme: 'dark',
   accent: ACCENT_DEFAULT,
@@ -89,6 +87,11 @@ let settingsCache = {
 
 const activeDownloads = new Map()
 const closedTabsStack = []
+let closedTabIdCounter = 1
+
+// Текущие menuActions для пересборки меню при изменении закрытых вкладок
+let currentMenuActions = null
+let currentMenuOptions = null
 
 const allowedInsecureHosts = new Set()
 const allowedBadCertHosts = new Set()
@@ -99,6 +102,7 @@ const pdfDataStore = new Map()
 let currentChromeHeight = CHROME_HEIGHT_BASE
 let chromeAnimTimer = null
 let isQuitting = false
+let isQuitHandled = false
 
 // ============ Session restore ============
 const SESSION_SAVE_DEBOUNCE = 500
@@ -512,7 +516,6 @@ function getDownloadsFile() { return path.join(app.getPath('userData'), 'downloa
 // ============================================================
 function normalizeToolbarButtons(arr) {
   if (!Array.isArray(arr)) return [...ALL_TOOLBAR_BUTTONS]
-  // Оставляем только валидные id, без дубликатов
   const valid = arr.filter((id, i) =>
     typeof id === 'string' &&
     ALL_TOOLBAR_BUTTONS.includes(id) &&
@@ -638,13 +641,6 @@ function broadcastTheme() {
   updateTitleBarOverlay()
 }
 
-function broadcastToolbarSettings() {
-  if (!chromeView || chromeView.webContents.isDestroyed()) return
-  chromeView.webContents.send('toolbar-settings-changed', {
-    visible: settingsCache.toolbarButtons,
-  })
-}
-
 function broadcastAccent() {
   const data = getAccentData()
   if (chromeView && !chromeView.webContents.isDestroyed()) chromeView.webContents.send('accent-changed', data)
@@ -657,6 +653,13 @@ function broadcastAccent() {
   if (pendingPermission && pendingPermission.popupWindow && !pendingPermission.popupWindow.isDestroyed()) {
     pendingPermission.popupWindow.webContents.send('accent-changed', data)
   }
+}
+
+function broadcastToolbarSettings() {
+  if (!chromeView || chromeView.webContents.isDestroyed()) return
+  chromeView.webContents.send('toolbar-settings-changed', {
+    visible: settingsCache.toolbarButtons,
+  })
 }
 
 // ============================================================
@@ -1584,7 +1587,6 @@ function recreateTab(tab) {
   }
 
   const view = new WebContentsView({ webPreferences: viewPrefs })
-  view.webContents.setVisualZoomLevelLimits(1, 3)
 
   tab.view = view
   mainWindow.contentView.addChildView(view)
@@ -1650,6 +1652,7 @@ function createTab(url, options = {}) {
   }
 
   const view = new WebContentsView({ webPreferences: viewPrefs })
+  try { view.webContents.setVisualZoomLevelLimits(1, 3) } catch (e) {}
 
   const tab = {
     id, view,
@@ -1670,7 +1673,6 @@ function createTab(url, options = {}) {
     savedFavicon: null,
     lastActiveAt: Date.now(),
     isPrivate,
-    // Reader mode
     isReaderMode: false,
     readerData: null,
     readerOriginalUrl: '',
@@ -1774,13 +1776,24 @@ function closeTab(id) {
   try {
     const url = getTabUrl(tab)
     const title = getTabTitle(tab)
-    if (url && !isInternalUrl(url) && !url.startsWith('file:') && !url.startsWith('data:') && !url.startsWith('about:')) {
+    // Приватные вкладки НЕ кладём в «недавно закрытые» — иначе URL утечёт в меню
+    if (
+      !tab.isPrivate &&
+      url &&
+      !isInternalUrl(url) &&
+      !url.startsWith('file:') &&
+      !url.startsWith('data:') &&
+      !url.startsWith('about:')
+    ) {
       closedTabsStack.push({
+        id: closedTabIdCounter++,
         url,
         title: title || url,
         favicon: tab.isUnloaded ? (tab.savedFavicon || null) : (tab.favicon || null),
+        closedAt: Date.now(),
       })
       if (closedTabsStack.length > CLOSED_TABS_MAX) closedTabsStack.shift()
+      refreshMenu()
     }
   } catch (e) {}
 
@@ -1843,6 +1856,30 @@ function restoreClosedTab() {
   const entry = closedTabsStack.pop()
   if (!entry || !entry.url) return
   createTab(entry.url)
+  refreshMenu()
+}
+
+function restoreClosedById(id) {
+  const idx = closedTabsStack.findIndex(t => t.id === id)
+  if (idx === -1) return
+  const entry = closedTabsStack.splice(idx, 1)[0]
+  if (!entry || !entry.url) return
+  createTab(entry.url)
+  refreshMenu()
+}
+
+function getRecentlyClosed() {
+  // Новые сверху
+  return [...closedTabsStack].reverse()
+}
+
+function refreshMenu() {
+  if (!currentMenuActions) return
+  try {
+    setupApplicationMenu(currentMenuActions, currentMenuOptions || { appName: 'Browser Project' })
+  } catch (err) {
+    debugLog('Menu', `Ошибка пересборки меню: ${err.message}`)
+  }
 }
 
 function duplicateTab(id) {
@@ -1851,6 +1888,30 @@ function duplicateTab(id) {
   const url = getTabUrl(tab)
   if (!url) return
   createTab(url)
+}
+
+function reorderTabs(payload) {
+  const { sourceId, targetId, position } = payload || {}
+  if (!sourceId || !targetId) return { ok: false }
+
+  const sourceIdx = tabs.findIndex(t => t.id === sourceId)
+  if (sourceIdx === -1) return { ok: false }
+  if (sourceId === targetId) return { ok: false }
+
+  const [moved] = tabs.splice(sourceIdx, 1)
+
+  const targetIdx = tabs.findIndex(t => t.id === targetId)
+  if (targetIdx === -1) {
+    tabs.splice(sourceIdx, 0, moved)
+    return { ok: false }
+  }
+
+  const insertIdx = position === 'after' ? targetIdx + 1 : targetIdx
+  tabs.splice(insertIdx, 0, moved)
+
+  sendTabsUpdate()
+  debugLog('Tab', `Перестановка: #${sourceId} ${position} #${targetId}`)
+  return { ok: true }
 }
 
 // ============================================================
@@ -2488,9 +2549,33 @@ app.whenReady().then(() => {
     openBookmarks: () => openBookmarksManager(),
     openSettings: (section) => openSettingsPage(section),
     openCookies: () => openCookiesPage(),
+
+    // ============ Недавно закрытые (RAM-only) ============
+    recentlyClosedItems: () => {
+      const list = getRecentlyClosed()
+      if (list.length === 0) {
+        return [{ label: 'Пусто', enabled: false }]
+      }
+      const items = list.map((t) => ({
+        label: (t.title || t.url).slice(0, 80),
+        toolTip: t.url,
+        click: () => restoreClosedById(t.id),
+      }))
+      items.push({ type: 'separator' })
+      items.push({
+        label: 'Очистить список',
+        click: () => {
+          closedTabsStack.length = 0
+          refreshMenu()
+        },
+      })
+      return items
+    },
   }
 
-  setupApplicationMenu(menuActions, { appName: 'Browser Project' })
+  currentMenuActions = menuActions
+  currentMenuOptions = { appName: 'Browser Project' }
+  setupApplicationMenu(menuActions, currentMenuOptions)
 
   loadSettings()
   loadBookmarks()
@@ -2536,6 +2621,7 @@ app.whenReady().then(() => {
   ipcMain.handle('tab-switch', (_e, id) => switchTab(id))
   ipcMain.handle('tab-restore-closed', () => restoreClosedTab())
   ipcMain.handle('tab-duplicate', (_e, id) => duplicateTab(id))
+  ipcMain.handle('tabs-reorder', (_e, payload) => reorderTabs(payload))
   ipcMain.handle('navigate', (_e, input) => navigateInActiveTab(input))
 
   // Reader mode
@@ -2710,6 +2796,10 @@ app.whenReady().then(() => {
     chromeView.webContents.send('scroll-state', !!isScrolled)
   })
 
+  ipcMain.on('drop-files', (_e, paths) => {
+    handleDropFiles(paths)
+  })
+
   ipcMain.handle('permission-respond', (_e, allowed) => {
     if (pendingPermission) {
       const { resolve, popupWindow: w } = pendingPermission
@@ -2724,7 +2814,7 @@ app.whenReady().then(() => {
     resolvedTheme: getResolvedTheme(),
     resolvedDownloadPath: getDefaultDownloadPath(),
   }))
-    ipcMain.handle('get-toolbar-settings', () => ({
+  ipcMain.handle('get-toolbar-settings', () => ({
     all: [...ALL_TOOLBAR_BUTTONS],
     visible: [...settingsCache.toolbarButtons],
   }))
@@ -3017,7 +3107,6 @@ app.whenReady().then(() => {
     broadcastLibrary()
     return serializeLibrary()
   })
-  
   ipcMain.handle('remove-bookmark', (_e, id) => {
     const idx = bookmarksCache.findIndex(b => b.id === id)
     if (idx < 0) return serializeLibrary()
@@ -3027,7 +3116,6 @@ app.whenReady().then(() => {
     broadcastLibrary()
     return serializeLibrary()
   })
-
   ipcMain.handle('remove-bookmarks', (_e, ids) => {
     if (!Array.isArray(ids) || ids.length === 0) return serializeLibrary()
     const idSet = new Set(ids)
@@ -3040,7 +3128,6 @@ app.whenReady().then(() => {
     }
     return serializeLibrary()
   })
-
   ipcMain.handle('rename-bookmark', (_e, id, newTitle) => {
     const bm = bookmarksCache.find(b => b.id === id)
     if (!bm) return serializeLibrary()
@@ -3074,7 +3161,6 @@ app.whenReady().then(() => {
     broadcastLibrary()
     return serializeLibrary()
   })
-
   ipcMain.handle('move-bookmarks', (_e, payload) => {
     const { ids, folderId } = payload || {}
     if (!Array.isArray(ids) || ids.length === 0) return serializeLibrary()
@@ -3375,7 +3461,6 @@ app.whenReady().then(() => {
     }
   })
 
-
   ipcMain.handle('clear-all-cookies', async () => {
     const ses = getSessionForCookies()
     if (!ses) return { ok: false, error: 'Сессия недоступна' }
@@ -3418,36 +3503,25 @@ app.whenReady().then(() => {
   ipcMain.handle('get-suggestions', async (_e, query) => {
     return await fetchSuggestions(query)
   })
-
-  ipcMain.on('drop-files', (_e, paths) => {
-    handleDropFiles(paths)
-  })
 })
 
 // ============================================================
 // ============ ЗАВЕРШЕНИЕ РАБОТЫ =============================
 // ============================================================
-let isQuitHandled = false
-
 app.on('before-quit', async (event) => {
   if (isQuitHandled) return
 
-  // Первый раз блокируем выход, чтобы успеть всё сохранить/очистить
   event.preventDefault()
   isQuitHandled = true
 
   try {
-    // 1. Синхронно сохраняем сессию
     flushSessionSave()
-
-    // 2. Ждём очистку приватной сессии
     await clearPrivateData()
     debugLog('App', 'Приватные данные очищены при выходе')
   } catch (err) {
     console.error('[before-quit]', err)
   }
 
-  // 3. Теперь реально выходим
   app.quit()
 })
 

@@ -22,6 +22,12 @@ let activeDownloadCount = 0
 const renderedTabIds = new Set()
 const closingTabIds = new Set()
 
+// ============ Drag & drop вкладок ============
+let dragSourceTabId = null
+let dragOverTabId = null
+let dragOverPosition = null  // 'before' | 'after'
+let pendingTabsUpdate = null
+
 // ============ Определение платформы ============
 window.browserAPI.getPlatform().then((platform) => {
   document.body.dataset.platform = platform || 'unknown'
@@ -147,13 +153,23 @@ window.browserAPI.onScrollState((isScrolled) => {
 })
 
 window.browserAPI.onTabsUpdated((tabs) => {
+  // Если идёт drag — откладываем обновление, чтобы не перерисовать DOM
+  // и не сломать drag. Применим после dragend.
+  if (dragSourceTabId !== null) {
+    pendingTabsUpdate = tabs
+    return
+  }
+  applyTabsUpdate(tabs)
+})
+
+function applyTabsUpdate(tabs) {
   tabsState = tabs || []
   const active = tabsState.find((t) => t.isActive)
   const isPrivate = !!(active && active.isPrivate)
   document.body.dataset.private = isPrivate ? 'true' : 'false'
   updateReaderButton(active)
   renderTabs()
-})
+}
 
 window.browserAPI.onLibraryUpdated((payload) => {
   library = payload || { bookmarks: [], folders: [] }
@@ -196,6 +212,12 @@ function animateCloseTab(id) {
   }, 220)
 }
 
+function clearDragIndicators() {
+  tabsContainer.querySelectorAll('.tab').forEach((x) => {
+    x.classList.remove('dragging', 'drag-over-left', 'drag-over-right')
+  })
+}
+
 function renderTabs() {
   const newIds = new Set(tabsState.map((t) => t.id))
   const enteringIds = new Set()
@@ -213,6 +235,7 @@ function renderTabs() {
     el.className = classes.join(' ')
     el.dataset.tabId = String(tab.id)
     el.title = tab.isUnloaded ? `${tab.title || ''} (выгружена)` : (tab.title || '')
+    el.draggable = true
 
     const faviconHtml = tab.favicon
       ? `<img src="${escapeHtml(tab.favicon)}" onerror="this.style.display='none';this.parentElement.innerHTML='<span>${escapeHtml(getInitial(tab.title))}</span>'">`
@@ -221,7 +244,7 @@ function renderTabs() {
     el.innerHTML = `
       <div class="tab-favicon">${faviconHtml}</div>
       <span class="tab-title">${escapeHtml(tab.title || 'Новая вкладка')}</span>
-      <button class="tab-close" data-close="${tab.id}" title="Закрыть вкладку">
+      <button class="tab-close" data-close="${tab.id}" title="Закрыть вкладку" draggable="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 6L6 18M6 6l12 12"/>
         </svg>
@@ -249,6 +272,86 @@ function renderTabs() {
       e.preventDefault()
       e.stopPropagation()
       window.browserAPI.showTabMenu(tab.id)
+    })
+
+    // ============ Drag & drop ============
+    el.addEventListener('dragstart', (e) => {
+      // Не начинаем drag, если схватились за кнопку закрытия
+      if (e.target.closest('.tab-close')) {
+        e.preventDefault()
+        return
+      }
+      if (closingTabIds.has(tab.id)) {
+        e.preventDefault()
+        return
+      }
+
+      dragSourceTabId = tab.id
+      el.classList.add('dragging')
+      try {
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', String(tab.id))
+      } catch {}
+    })
+
+    el.addEventListener('dragover', (e) => {
+      if (dragSourceTabId === null) return
+      if (tab.id === dragSourceTabId) return
+
+      e.preventDefault()
+      try { e.dataTransfer.dropEffect = 'move' } catch {}
+
+      const rect = el.getBoundingClientRect()
+      const isAfter = e.clientX > rect.left + rect.width / 2
+
+      // Снять индикаторы со всех остальных
+      tabsContainer.querySelectorAll('.tab').forEach((x) => {
+        if (x !== el) x.classList.remove('drag-over-left', 'drag-over-right')
+      })
+
+      el.classList.toggle('drag-over-left', !isAfter)
+      el.classList.toggle('drag-over-right', isAfter)
+
+      dragOverTabId = tab.id
+      dragOverPosition = isAfter ? 'after' : 'before'
+    })
+
+    el.addEventListener('dragleave', (e) => {
+      if (e.target !== el) return
+      el.classList.remove('drag-over-left', 'drag-over-right')
+    })
+
+    el.addEventListener('drop', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      if (dragSourceTabId === null || dragOverTabId === null) return
+      if (dragSourceTabId === dragOverTabId) return
+
+      window.browserAPI.reorderTabs({
+        sourceId: dragSourceTabId,
+        targetId: dragOverTabId,
+        position: dragOverPosition || 'after',
+      })
+
+      dragSourceTabId = null
+      dragOverTabId = null
+      dragOverPosition = null
+      clearDragIndicators()
+    })
+
+    el.addEventListener('dragend', () => {
+      dragSourceTabId = null
+      dragOverTabId = null
+      dragOverPosition = null
+      clearDragIndicators()
+
+      // Применяем отложенное обновление (если было)
+      if (pendingTabsUpdate) {
+        const next = pendingTabsUpdate
+        pendingTabsUpdate = null
+        applyTabsUpdate(next)
+      }
     })
 
     tabsContainer.appendChild(el)
@@ -389,11 +492,7 @@ function updateBookmarksBarVisibility() {
 btnNewTab.addEventListener('click', () => window.browserAPI.createTab())
 
 window.browserAPI.getTabs().then((tabs) => {
-  tabsState = tabs || []
-  const active = tabsState.find((t) => t.isActive)
-  document.body.dataset.private = active && active.isPrivate ? 'true' : 'false'
-  updateReaderButton(active)
-  renderTabs()
+  applyTabsUpdate(tabs)
 })
 
 window.browserAPI.getLibrary().then((data) => {

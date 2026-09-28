@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
   switchTab: (id) => ipcRenderer.invoke('tab-switch', id),
   restoreClosedTab: () => ipcRenderer.invoke('tab-restore-closed'),
   duplicateTab: (id) => ipcRenderer.invoke('tab-duplicate', id),
+  reorderTabs: (payload) => ipcRenderer.invoke('tabs-reorder', payload),
   showTabMenu: (id) => ipcRenderer.invoke('show-tab-menu', id),
 
   getSecurityState: () => ipcRenderer.invoke('get-security-state'),

@@ -554,3 +554,24 @@ html[data-theme="light"] body[data-private="true"] .private-badge {
   opacity: 0.8;
   margin-right: 1px;
 }
+
+/* ============================================================
+   ============ Drag & drop вкладок ===========================
+   ============================================================ */
+.tab.dragging {
+  opacity: 0.35;
+  cursor: grabbing;
+}
+
+.tab.drag-over-left {
+  box-shadow: inset 3px 0 0 0 var(--accent);
+}
+
+.tab.drag-over-right {
+  box-shadow: inset -3px 0 0 0 var(--accent);
+}
+
+/* Пока тащим вкладку — отключаем выделение текста во всём окне */
+body:has(.tab.dragging) {
+  user-select: none;
+}
