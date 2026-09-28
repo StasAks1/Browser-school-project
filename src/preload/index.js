@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 contextBridge.exposeInMainWorld('browserAPI', {
   navigate: (input) => ipcRenderer.invoke('navigate', input),
@@ -31,6 +31,11 @@ contextBridge.exposeInMainWorld('browserAPI', {
   exitReaderMode: () => ipcRenderer.invoke('reader-exit'),
   getReaderContent: () => ipcRenderer.invoke('reader-get-content'),
 
+  // PDF
+  openPdfViewer: (filePath) => ipcRenderer.invoke('open-pdf-viewer', filePath),
+  getPdfMeta: () => ipcRenderer.invoke('get-pdf-meta'),
+  getPdfData: () => ipcRenderer.invoke('get-pdf-data'),
+
   warningGoBack: () => ipcRenderer.invoke('warning-go-back'),
   warningProceed: (url) => ipcRenderer.invoke('warning-proceed', url),
 
@@ -41,6 +46,9 @@ contextBridge.exposeInMainWorld('browserAPI', {
 
   getSettings: () => ipcRenderer.invoke('get-settings'),
   getTheme: () => ipcRenderer.invoke('get-theme'),
+  getToolbarSettings: () => ipcRenderer.invoke('get-toolbar-settings'),
+  setToolbarSettings: (visible) => ipcRenderer.invoke('set-toolbar-settings', visible),
+  onToolbarSettingsChanged: (cb) => ipcRenderer.on('toolbar-settings-changed', (_e, data) => cb(data)),
   setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
   getAccent: () => ipcRenderer.invoke('get-accent'),
   getAccentOptions: () => ipcRenderer.invoke('get-accent-options'),
@@ -94,6 +102,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
   removeCookie: (payload) => ipcRenderer.invoke('remove-cookie', payload),
   removeCookiesByDomain: (domain) => ipcRenderer.invoke('remove-cookies-by-domain', domain),
   clearAllCookies: () => ipcRenderer.invoke('clear-all-cookies'),
+  clearSiteData: () => ipcRenderer.invoke('clear-site-data'),
   openCookiesPage: () => ipcRenderer.invoke('open-cookies-page'),
   setCookie: (payload) => ipcRenderer.invoke('set-cookie', payload),
   updateCookie: (payload) => ipcRenderer.invoke('update-cookie', payload),
@@ -151,3 +160,46 @@ function handleScroll() {
 document.addEventListener('scroll', handleScroll, { capture: true, passive: true })
 window.addEventListener('scroll', handleScroll, { passive: true })
 window.addEventListener('DOMContentLoaded', handleScroll)
+
+// ============================================================
+// ============ DRAG & DROP ФАЙЛОВ В ОКНО ====================
+// ============================================================
+function collectPaths(e) {
+  const paths = []
+  try {
+    const files = Array.from(e.dataTransfer?.files || [])
+    for (const f of files) {
+      let p = null
+      // Electron 32+: File.path удалён, нужен webUtils.getPathForFile
+      try {
+        if (webUtils && typeof webUtils.getPathForFile === 'function') {
+          p = webUtils.getPathForFile(f)
+        }
+      } catch (err) {}
+      // Fallback для старых версий
+      if (!p && f.path) p = f.path
+      if (p) paths.push(p)
+    }
+  } catch (err) {}
+  return paths
+}
+
+window.addEventListener('dragover', (e) => {
+  const types = Array.from(e.dataTransfer?.types || [])
+  if (!types.includes('Files')) return
+  e.preventDefault()
+  e.stopPropagation()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+}, true)
+
+window.addEventListener('drop', (e) => {
+  const types = Array.from(e.dataTransfer?.types || [])
+  if (!types.includes('Files')) return
+  e.preventDefault()
+  e.stopPropagation()
+
+  const paths = collectPaths(e)
+  if (!paths.length) return
+
+  ipcRenderer.send('drop-files', paths)
+}, true)

@@ -32,6 +32,7 @@ const INTERNAL_SETTINGS = 'internal://settings'
 const INTERNAL_DOWNLOADS = 'internal://downloads'
 const INTERNAL_COOKIES = 'internal://cookies'
 const INTERNAL_READER = 'internal://reader'
+const INTERNAL_PDF = 'internal://pdf'
 
 const POPUP_WIDTH = 300
 const POPUP_HEIGHT = 165
@@ -70,6 +71,8 @@ let bookmarksCache = []
 let foldersCache = []
 let historyCache = []
 let downloadsCache = []
+const ALL_TOOLBAR_BUTTONS = ['reader', 'find', 'downloads', 'history', 'reload', 'home']
+
 let settingsCache = {
   theme: 'dark',
   accent: ACCENT_DEFAULT,
@@ -77,6 +80,7 @@ let settingsCache = {
   askWhereToSave: false,
   restoreSession: true,
   blockTrackers: true,
+  toolbarButtons: [...ALL_TOOLBAR_BUTTONS],
 }
 
 const activeDownloads = new Map()
@@ -84,6 +88,9 @@ const closedTabsStack = []
 
 const allowedInsecureHosts = new Set()
 const allowedBadCertHosts = new Set()
+
+// PDF-данные, привязанные к вкладкам: tabId -> { path, data|null }
+const pdfDataStore = new Map()
 
 let currentChromeHeight = CHROME_HEIGHT_BASE
 let chromeAnimTimer = null
@@ -411,6 +418,7 @@ function isTrustedInternalUrl(url) {
     url.includes('downloads/downloads.html') ||
     url.includes('cookies/cookies.html') ||
     url.includes('reader/reader.html') ||
+    url.includes('pdf/pdf.html') ||
     url.includes('statusbar/statusbar.html') ||
     url.includes('error/error.html') ||
     url.includes('warning/warning.html') ||
@@ -455,6 +463,10 @@ function getReaderPagePath() { return path.join(__dirname, '../renderer/reader/r
 function getReaderPageUrl() {
   return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/reader/reader.html` : null
 }
+function getPdfPagePath() { return path.join(__dirname, '../renderer/pdf/pdf.html') }
+function getPdfPageUrl() {
+  return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/pdf/pdf.html` : null
+}
 function getStatusBarPath() { return path.join(__dirname, '../renderer/statusbar/statusbar.html') }
 function getStatusBarUrl() {
   return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/statusbar/statusbar.html` : null
@@ -483,6 +495,17 @@ function getDownloadsFile() { return path.join(app.getPath('userData'), 'downloa
 // ============================================================
 // ============ НАСТРОЙКИ =====================================
 // ============================================================
+function normalizeToolbarButtons(arr) {
+  if (!Array.isArray(arr)) return [...ALL_TOOLBAR_BUTTONS]
+  // Оставляем только валидные id, без дубликатов
+  const valid = arr.filter((id, i) =>
+    typeof id === 'string' &&
+    ALL_TOOLBAR_BUTTONS.includes(id) &&
+    arr.indexOf(id) === i
+  )
+  return valid
+}
+
 function loadSettings() {
   try {
     const file = getSettingsFile()
@@ -496,6 +519,7 @@ function loadSettings() {
         askWhereToSave: !!data.askWhereToSave,
         restoreSession: data.restoreSession !== false,
         blockTrackers: data.blockTrackers !== false,
+        toolbarButtons: normalizeToolbarButtons(data.toolbarButtons),
       }
     } else {
       settingsCache = {
@@ -505,6 +529,7 @@ function loadSettings() {
         askWhereToSave: false,
         restoreSession: true,
         blockTrackers: true,
+        toolbarButtons: [...ALL_TOOLBAR_BUTTONS],
       }
       saveSettings()
     }
@@ -517,6 +542,7 @@ function loadSettings() {
       askWhereToSave: false,
       restoreSession: true,
       blockTrackers: true,
+      toolbarButtons: [...ALL_TOOLBAR_BUTTONS],
     }
   }
 }
@@ -595,6 +621,13 @@ function broadcastTheme() {
   }
   applyBackgroundColors()
   updateTitleBarOverlay()
+}
+
+function broadcastToolbarSettings() {
+  if (!chromeView || chromeView.webContents.isDestroyed()) return
+  chromeView.webContents.send('toolbar-settings-changed', {
+    visible: settingsCache.toolbarButtons,
+  })
 }
 
 function broadcastAccent() {
@@ -839,6 +872,16 @@ function getTabTitle(tab) {
   try { return tab.view.webContents.getTitle() || tab.title || '' } catch { return tab.title || '' }
 }
 
+function parseInternalSection(url) {
+  if (!url || typeof url !== 'string') return ''
+  const idx = url.indexOf('?')
+  if (idx === -1) return ''
+  try {
+    const params = new URLSearchParams(url.slice(idx + 1))
+    return params.get('section') || ''
+  } catch { return '' }
+}
+
 function isStartpageUrl(url) { if (!url) return true; return url.includes('startpage.html') }
 function isBookmarksPageUrl(url) { if (!url) return false; return url.includes('bookmarks/bookmarks.html') }
 function isHistoryPageUrl(url) { if (!url) return false; return url.includes('history/history.html') }
@@ -846,12 +889,13 @@ function isSettingsPageUrl(url) { if (!url) return false; return url.includes('s
 function isDownloadsPageUrl(url) { if (!url) return false; return url.includes('downloads/downloads.html') }
 function isCookiesPageUrl(url) { if (!url) return false; return url.includes('cookies/cookies.html') }
 function isReaderPageUrl(url) { if (!url) return false; return url.includes('reader/reader.html') }
+function isPdfPageUrl(url) { if (!url) return false; return url.includes('pdf/pdf.html') }
 function isErrorPageUrl(url) { if (!url) return false; return url.includes('error/error.html') }
 function isWarningPageUrl(url) { if (!url) return false; return url.includes('warning/warning.html') }
 function isInternalUrl(url) {
   return isStartpageUrl(url) || isBookmarksPageUrl(url) || isHistoryPageUrl(url) ||
          isSettingsPageUrl(url) || isDownloadsPageUrl(url) || isCookiesPageUrl(url) ||
-         isReaderPageUrl(url) || isErrorPageUrl(url) || isWarningPageUrl(url)
+         isReaderPageUrl(url) || isPdfPageUrl(url) || isErrorPageUrl(url) || isWarningPageUrl(url)
 }
 
 function serializeTabs() {
@@ -1076,6 +1120,38 @@ function loadReaderPage(tab) {
 }
 
 // ============================================================
+// ============ PDF VIEWER ====================================
+// ============================================================
+function openPdfViewer(filePath) {
+  if (!filePath) return null
+
+  const tab = createTab(INTERNAL_PDF)
+  if (!tab) return null
+
+  pdfDataStore.set(tab.id, { path: filePath, data: null })
+  debugLog('PDF', `Открыт PDF-viewer: ${filePath} (вкладка #${tab.id})`)
+  return tab
+}
+
+function handleDropFiles(paths) {
+  if (!Array.isArray(paths) || paths.length === 0) return
+
+  const filePath = paths[0]
+  if (!filePath) return
+
+  const ext = path.extname(filePath).toLowerCase()
+
+  if (ext === '.pdf') {
+    openPdfViewer(filePath)
+    return
+  }
+
+  shell.openPath(filePath).catch((err) => {
+    debugLog('Drop', `Не удалось открыть ${filePath}: ${err.message}`)
+  })
+}
+
+// ============================================================
 // ============ STATUS BAR ====================================
 // ============================================================
 function createStatusBar() {
@@ -1205,7 +1281,15 @@ function updateChromeHeightForBookmarks() {
 // ============================================================
 function isUrlLike(input) {
   if (!input) return false
-  if (input === INTERNAL_BOOKMARKS || input === INTERNAL_HISTORY || input === INTERNAL_SETTINGS || input === INTERNAL_DOWNLOADS || input === INTERNAL_COOKIES) return true
+  if (
+    input === INTERNAL_BOOKMARKS ||
+    input === INTERNAL_HISTORY ||
+    input === INTERNAL_SETTINGS ||
+    input === INTERNAL_DOWNLOADS ||
+    input === INTERNAL_COOKIES ||
+    input === INTERNAL_PDF ||
+    input.startsWith(INTERNAL_SETTINGS + '?')
+  ) return true
   if (/\s/.test(input)) return false
   if (/^https?:\/\//i.test(input)) return true
   if (/^localhost(:\d+)?(\/|$)/.test(input)) return true
@@ -1215,7 +1299,15 @@ function isUrlLike(input) {
 
 function normalizeToUrl(input) {
   const trimmed = input.trim()
-  if (trimmed === INTERNAL_BOOKMARKS || trimmed === INTERNAL_HISTORY || trimmed === INTERNAL_SETTINGS || trimmed === INTERNAL_DOWNLOADS || trimmed === INTERNAL_COOKIES) return trimmed
+  if (
+    trimmed === INTERNAL_BOOKMARKS ||
+    trimmed === INTERNAL_HISTORY ||
+    trimmed === INTERNAL_SETTINGS ||
+    trimmed === INTERNAL_DOWNLOADS ||
+    trimmed === INTERNAL_COOKIES ||
+    trimmed === INTERNAL_PDF ||
+    trimmed.startsWith(INTERNAL_SETTINGS + '?')
+  ) return trimmed
   if (isUrlLike(trimmed)) {
     if (/^https?:\/\//i.test(trimmed)) return trimmed
     return 'https://' + trimmed
@@ -1293,6 +1385,7 @@ function attachTabListeners(tab) {
     const isD = isDownloadsPageUrl(currentUrl)
     const isC = isCookiesPageUrl(currentUrl)
     const isR = isReaderPageUrl(currentUrl)
+    const isP = isPdfPageUrl(currentUrl)
     const isE = isErrorPageUrl(currentUrl)
     const isW = isWarningPageUrl(currentUrl)
     tab.isBookmarksManager = isBM
@@ -1302,14 +1395,18 @@ function attachTabListeners(tab) {
     tab.isCookiesManager = isC
     tab.isErrorPage = isE
     tab.isWarningPage = isW
-    tab.title = isBM ? 'Закладки'
-      : (isH ? 'История'
-      : (isS ? 'Настройки'
-      : (isD ? 'Загрузки'
-      : (isC ? 'Cookie'
-      : (isR ? 'Режим чтения'
-      : (isE ? 'Не удалось открыть страницу'
-      : (isW ? 'Соединение не защищено' : title)))))))
+
+    if (isBM) tab.title = 'Закладки'
+    else if (isH) tab.title = 'История'
+    else if (isS) tab.title = 'Настройки'
+    else if (isD) tab.title = 'Загрузки'
+    else if (isC) tab.title = 'Cookie'
+    else if (isR) tab.title = 'Режим чтения'
+    else if (isP) tab.title = 'PDF'
+    else if (isE) tab.title = 'Не удалось открыть страницу'
+    else if (isW) tab.title = 'Соединение не защищено'
+    else tab.title = title
+
     sendTabsUpdate()
   })
 
@@ -1349,7 +1446,6 @@ function attachTabListeners(tab) {
 
   attachShortcuts(wc)
 
-  // Контекстное меню веб-страницы
   wc.on('context-menu', (_e, params) => {
     showTabContextMenu({
       params,
@@ -1367,7 +1463,6 @@ function attachTabListeners(tab) {
     tab.url = navUrl
     if (tab.id === activeTabId) hideStatusBar()
 
-    // Если пользователь ушёл с reader-страницы — сбрасываем состояние
     if (tab.isReaderMode && !isReaderPageUrl(navUrl)) {
       tab.isReaderMode = false
       tab.readerData = null
@@ -1381,6 +1476,7 @@ function attachTabListeners(tab) {
     const isD = isDownloadsPageUrl(navUrl)
     const isC = isCookiesPageUrl(navUrl)
     const isR = isReaderPageUrl(navUrl)
+    const isP = isPdfPageUrl(navUrl)
     const isE = isErrorPageUrl(navUrl)
     const isW = isWarningPageUrl(navUrl)
     tab.isBookmarksManager = isBM
@@ -1397,6 +1493,7 @@ function attachTabListeners(tab) {
     else if (isD) { tab.title = 'Загрузки'; tab.favicon = null }
     else if (isC) { tab.title = 'Cookie'; tab.favicon = null }
     else if (isR) { tab.title = 'Режим чтения'; tab.favicon = null }
+    else if (isP) { tab.title = 'PDF'; tab.favicon = null }
     else if (isE) { tab.title = 'Не удалось открыть страницу'; tab.favicon = null }
     else if (isW) { tab.title = 'Соединение не защищено'; tab.favicon = null }
     else {
@@ -1472,6 +1569,7 @@ function recreateTab(tab) {
   }
 
   const view = new WebContentsView({ webPreferences: viewPrefs })
+  view.webContents.setVisualZoomLevelLimits(1, 3)
 
   tab.view = view
   mainWindow.contentView.addChildView(view)
@@ -1566,9 +1664,10 @@ function createTab(url, options = {}) {
 
   if (url === INTERNAL_BOOKMARKS) { tab.isBookmarksManager = true; tab.title = 'Закладки' }
   if (url === INTERNAL_HISTORY) { tab.isHistoryManager = true; tab.title = 'История' }
-  if (url === INTERNAL_SETTINGS) { tab.isSettingsPage = true; tab.title = 'Настройки' }
+  if (url === INTERNAL_SETTINGS || (url && url.startsWith(INTERNAL_SETTINGS + '?'))) { tab.isSettingsPage = true; tab.title = 'Настройки' }
   if (url === INTERNAL_DOWNLOADS) { tab.isDownloadsManager = true; tab.title = 'Загрузки' }
   if (url === INTERNAL_COOKIES) { tab.isCookiesManager = true; tab.title = 'Cookie' }
+  if (url === INTERNAL_PDF) { tab.title = 'PDF' }
 
   tabs.push(tab)
   mainWindow.contentView.addChildView(view)
@@ -1604,9 +1703,15 @@ function loadTabContent(tab, url) {
     if (u) wc.loadURL(u); else wc.loadFile(getHistoryPagePath())
     return
   }
-  if (url === INTERNAL_SETTINGS) {
+  if (url === INTERNAL_SETTINGS || (url && url.startsWith(INTERNAL_SETTINGS + '?'))) {
     const u = getSettingsPageUrl()
-    if (u) wc.loadURL(u); else wc.loadFile(getSettingsPagePath())
+    const section = parseInternalSection(url)
+    if (u) {
+      wc.loadURL(section ? `${u}?section=${encodeURIComponent(section)}` : u)
+    } else {
+      const opts = section ? { query: { section } } : undefined
+      wc.loadFile(getSettingsPagePath(), opts)
+    }
     return
   }
   if (url === INTERNAL_DOWNLOADS) {
@@ -1622,6 +1727,11 @@ function loadTabContent(tab, url) {
   if (url === INTERNAL_READER) {
     const u = getReaderPageUrl()
     if (u) wc.loadURL(u); else wc.loadFile(getReaderPagePath())
+    return
+  }
+  if (url === INTERNAL_PDF || (url && url.startsWith(INTERNAL_PDF + '?'))) {
+    const u = getPdfPageUrl()
+    if (u) wc.loadURL(u); else wc.loadFile(getPdfPagePath())
     return
   }
   if (url && url !== 'about:blank') {
@@ -1643,6 +1753,8 @@ function closeTab(id) {
   const idx = tabs.findIndex(t => t.id === id)
   if (idx === -1) return
   const tab = tabs[idx]
+
+  pdfDataStore.delete(id)
 
   try {
     const url = getTabUrl(tab)
@@ -1746,9 +1858,15 @@ function navigateInActiveTab(input) {
     if (u) tab.view.webContents.loadURL(u); else tab.view.webContents.loadFile(getHistoryPagePath())
     return
   }
-  if (url === INTERNAL_SETTINGS) {
+  if (url === INTERNAL_SETTINGS || (url && url.startsWith(INTERNAL_SETTINGS + '?'))) {
     const u = getSettingsPageUrl()
-    if (u) tab.view.webContents.loadURL(u); else tab.view.webContents.loadFile(getSettingsPagePath())
+    const section = parseInternalSection(url)
+    if (u) {
+      tab.view.webContents.loadURL(section ? `${u}?section=${encodeURIComponent(section)}` : u)
+    } else {
+      const opts = section ? { query: { section } } : undefined
+      tab.view.webContents.loadFile(getSettingsPagePath(), opts)
+    }
     return
   }
   if (url === INTERNAL_DOWNLOADS) {
@@ -1759,6 +1877,11 @@ function navigateInActiveTab(input) {
   if (url === INTERNAL_COOKIES) {
     const u = getCookiesPageUrl()
     if (u) tab.view.webContents.loadURL(u); else tab.view.webContents.loadFile(getCookiesPagePath())
+    return
+  }
+  if (url === INTERNAL_PDF || (url && url.startsWith(INTERNAL_PDF + '?'))) {
+    const u = getPdfPageUrl()
+    if (u) tab.view.webContents.loadURL(u); else tab.view.webContents.loadFile(getPdfPagePath())
     return
   }
 
@@ -1802,7 +1925,13 @@ function goHomeInActiveTab() {
 
 function openBookmarksManager() { createTab(INTERNAL_BOOKMARKS) }
 function openHistoryManager() { createTab(INTERNAL_HISTORY) }
-function openSettingsPage() { createTab(INTERNAL_SETTINGS) }
+function openSettingsPage(section) {
+  if (section && typeof section === 'string') {
+    createTab(INTERNAL_SETTINGS + '?section=' + encodeURIComponent(section))
+    return
+  }
+  createTab(INTERNAL_SETTINGS)
+}
 function openDownloadsPage() { createTab(INTERNAL_DOWNLOADS) }
 function openCookiesPage() { createTab(INTERNAL_COOKIES) }
 
@@ -1919,6 +2048,7 @@ function createWindow() {
     const activeCount = downloadsCache.filter(d => d.state === 'progressing' || d.state === 'paused').length
     chromeView.webContents.send('download-active-count', activeCount)
     broadcastSecurityState()
+    broadcastToolbarSettings()
   })
 
   attachShortcuts(chromeView.webContents)
@@ -1939,6 +2069,7 @@ function createWindow() {
     closePermissionPopup()
     if (chromeAnimTimer) { clearTimeout(chromeAnimTimer); chromeAnimTimer = null }
     mainWindow = null; chromeView = null; statusBarView = null; tabs = []; activeTabId = null
+    pdfDataStore.clear()
   })
 
   applyBackgroundColors()
@@ -2179,8 +2310,6 @@ function buildCookieUrl(cookie) {
 app.whenReady().then(() => {
   debugStartupBanner()
 
-  // Иконку Dock вручную ставим только в dev-режиме.
-  // В собранном приложении её подставляет electron-builder.
   if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
     try {
       app.dock.setIcon(path.join(__dirname, '../../build/icon.png'))
@@ -2202,12 +2331,10 @@ app.whenReady().then(() => {
     callback(false)
   })
 
-  // При старте чистим приватные данные (могли остаться с прошлого сеанса, если был краш)
   clearPrivateData()
 
   // ============ Меню приложения ============
   const menuActions = {
-    // Файл
     newTab: () => createTab(),
     newPrivateTab: () => createTab(undefined, { private: true }),
     closeAllPrivate: () => {
@@ -2263,7 +2390,6 @@ app.whenReady().then(() => {
     },
     toggleReader: () => toggleReaderMode(),
 
-    // Правка
     findInPage: () => {
       if (chromeView && !chromeView.webContents.isDestroyed()) {
         chromeView.webContents.focus()
@@ -2282,7 +2408,6 @@ app.whenReady().then(() => {
       }
     },
 
-    // Вид
     reload: () => {
       const t = getActiveTab()
       if (t && t.isUnloaded) recreateTab(t)
@@ -2343,11 +2468,10 @@ app.whenReady().then(() => {
       }
     },
 
-    // История / внутренние страницы
     openHistory: () => openHistoryManager(),
     openDownloads: () => openDownloadsPage(),
     openBookmarks: () => openBookmarksManager(),
-    openSettings: () => openSettingsPage(),
+    openSettings: (section) => openSettingsPage(section),
     openCookies: () => openCookiesPage(),
   }
 
@@ -2410,6 +2534,43 @@ app.whenReady().then(() => {
     const tab = tabs.find(t => t.view && !t.view.webContents.isDestroyed() && t.view.webContents === event.sender)
     if (!tab || !tab.readerData) return null
     return tab.readerData
+  })
+
+  // ============ PDF Viewer IPC ============
+  ipcMain.handle('open-pdf-viewer', (_e, filePath) => {
+    const tab = openPdfViewer(filePath)
+    return tab ? { id: tab.id } : null
+  })
+
+  ipcMain.handle('get-pdf-meta', (event) => {
+    const tab = tabs.find(t =>
+      t.view && !t.view.webContents.isDestroyed() && t.view.webContents === event.sender
+    )
+    if (!tab) return null
+    const entry = pdfDataStore.get(tab.id)
+    if (!entry) return null
+    return { path: entry.path, name: path.basename(entry.path) }
+  })
+
+  ipcMain.handle('get-pdf-data', async (event) => {
+    const tab = tabs.find(t =>
+      t.view && !t.view.webContents.isDestroyed() && t.view.webContents === event.sender
+    )
+    if (!tab) return null
+    const entry = pdfDataStore.get(tab.id)
+    if (!entry || !entry.path) return null
+
+    if (entry.data) return entry.data
+
+    try {
+      const buf = await fs.promises.readFile(entry.path)
+      const data = new Uint8Array(buf)
+      entry.data = data
+      return data
+    } catch (err) {
+      debugLog('PDF', `Ошибка чтения ${entry.path}: ${err.message}`)
+      return null
+    }
   })
 
   ipcMain.handle('go-back', () => {
@@ -2548,6 +2709,19 @@ app.whenReady().then(() => {
     resolvedTheme: getResolvedTheme(),
     resolvedDownloadPath: getDefaultDownloadPath(),
   }))
+    ipcMain.handle('get-toolbar-settings', () => ({
+    all: [...ALL_TOOLBAR_BUTTONS],
+    visible: [...settingsCache.toolbarButtons],
+  }))
+  ipcMain.handle('set-toolbar-settings', (_e, visible) => {
+    settingsCache.toolbarButtons = normalizeToolbarButtons(visible)
+    saveSettings()
+    broadcastToolbarSettings()
+    return {
+      all: [...ALL_TOOLBAR_BUTTONS],
+      visible: [...settingsCache.toolbarButtons],
+    }
+  })
   ipcMain.handle('get-theme', () => getResolvedTheme())
   ipcMain.handle('set-theme', (_e, theme) => {
     if (!['light', 'dark', 'system'].includes(theme)) return settingsCache
@@ -3137,8 +3311,40 @@ app.whenReady().then(() => {
     }
   })
 
+  ipcMain.handle('clear-site-data', async () => {
+    const ses = getSessionForCookies()
+    if (!ses) return { ok: false, error: 'Сессия недоступна' }
+    try {
+      await ses.clearStorageData({
+        storages: [
+          'cookies',
+          'filesystem',
+          'indexdb',
+          'localstorage',
+          'shadercache',
+          'websql',
+          'serviceworkers',
+          'cachestorage',
+        ],
+      })
+      await ses.clearCache()
+      if (typeof ses.clearAuthCache === 'function') {
+        await ses.clearAuthCache()
+      }
+      debugLog('Cookies', 'Очищены все данные сайтов (cookies + storage + cache)')
+      return { ok: true }
+    } catch (err) {
+      debugLog('Cookies', `Ошибка очистки данных сайтов: ${err.message}`)
+      return { ok: false, error: err.message }
+    }
+  })
+
   ipcMain.handle('get-suggestions', async (_e, query) => {
     return await fetchSuggestions(query)
+  })
+
+  ipcMain.on('drop-files', (_e, paths) => {
+    handleDropFiles(paths)
   })
 })
 

@@ -29,7 +29,8 @@ export default defineConfig({
           error: resolve(__dirname, 'src/renderer/error/error.html'),
           warning: resolve(__dirname, 'src/renderer/warning/warning.html'),
           popup: resolve(__dirname, 'src/renderer/popup/popup.html'),
-          permission: resolve(__dirname, 'src/renderer/permission/permission.html')
+          permission: resolve(__dirname, 'src/renderer/permission/permission.html'),
+          pdf: resolve(__dirname, 'src/renderer/pdf/pdf.html')
         }
       }
     }

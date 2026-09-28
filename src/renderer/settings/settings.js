@@ -9,6 +9,7 @@ let downloadsInfo = { path: '', askWhereToSave: false, isDefault: true }
 let restoreSessionEnabled = true
 let trackerEnabled = true
 let trackerStats = { total: 0, byDomain: [] }
+let toolbarSettings = { all: [], visible: [] }
 
 // ============ Инициализация ============
 async function init() {
@@ -22,6 +23,8 @@ async function init() {
   const trackerSetting = await window.browserAPI.getTrackerSetting()
   trackerEnabled = !!trackerSetting.enabled
   trackerStats = trackerSetting.stats || { total: 0, byDomain: [] }
+
+  toolbarSettings = await window.browserAPI.getToolbarSettings()
 
   renderSection('appearance')
 
@@ -42,6 +45,49 @@ function renderSection(section) {
 }
 
 // ============ Внешний вид ============
+const TOOLBAR_LABELS = {
+  reader: 'Режим чтения',
+  find: 'Поиск на странице',
+  downloads: 'Загрузки',
+  history: 'История',
+  reload: 'Обновить',
+  home: 'Домой',
+}
+
+function renderToolbarCheckboxes() {
+  const visible = new Set(toolbarSettings.visible || [])
+  const order = Array.isArray(toolbarSettings.visible) ? toolbarSettings.visible : []
+  // Все id: сначала видимые в порядке, потом скрытые
+  const all = [...order, ...(toolbarSettings.all || []).filter(id => !order.includes(id))]
+
+  return all.map((id, idx) => {
+    const isVisible = visible.has(id)
+    const isFirst = idx === 0
+    const isLast = idx === all.length - 1
+
+    return `
+      <div class="toolbar-row" data-row-id="${id}">
+        <label class="toolbar-checkbox">
+          <input type="checkbox" data-toolbar-toggle="${id}" ${isVisible ? 'checked' : ''}>
+          <span>${escapeHtml(TOOLBAR_LABELS[id] || id)}</span>
+        </label>
+        <div class="toolbar-arrows">
+          <button type="button" class="toolbar-arrow" data-move-up="${id}" title="Вверх" ${isFirst ? 'disabled' : ''}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 15l-6-6-6 6"/>
+            </svg>
+          </button>
+          <button type="button" class="toolbar-arrow" data-move-down="${id}" title="Вниз" ${isLast ? 'disabled' : ''}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    `
+  }).join('')
+}
+
 function renderAppearance() {
   const accentSwatches = accentOptions.map((opt) => `
     <button class="accent-option${opt.name === currentAccent ? ' active' : ''}"
@@ -99,6 +145,18 @@ function renderAppearance() {
           </div>
         </div>
       </div>
+
+      <div class="setting-row column">
+        <div class="setting-body">
+          <div class="setting-label">Кнопки на панели</div>
+          <div class="setting-desc">Какие кнопки показывать в правой части тулбара и в каком порядке. Кнопка «Настройки» всегда видна.</div>
+        </div>
+        <div class="setting-control" style="width: 100%; margin-top: 8px;">
+          <div class="toolbar-checkboxes" id="toolbar-checkboxes">
+            ${renderToolbarCheckboxes()}
+          </div>
+        </div>
+      </div>
     </div>
   `
 
@@ -123,6 +181,62 @@ function renderAppearance() {
       btn.classList.add('active')
     })
   })
+
+  const toolbarBox = document.getElementById('toolbar-checkboxes')
+
+  // Собирает текущий порядок из DOM + какие чекбоксы включены
+  function collectToolbarState() {
+    const order = []
+    toolbarBox.querySelectorAll('[data-row-id]').forEach((row) => {
+      const id = row.dataset.rowId
+      const cb = row.querySelector('[data-toolbar-toggle]')
+      if (cb && cb.checked) order.push(id)
+    })
+    return order
+  }
+
+  // Пересобрать UI из текущего состояния
+  function rerenderToolbarBox() {
+    toolbarBox.innerHTML = renderToolbarCheckboxes()
+    bindToolbarHandlers()
+  }
+
+  function bindToolbarHandlers() {
+    toolbarBox.querySelectorAll('[data-toolbar-toggle]').forEach((cb) => {
+      cb.addEventListener('change', async () => {
+        toolbarSettings = await window.browserAPI.setToolbarSettings(collectToolbarState())
+        rerenderToolbarBox()
+      })
+    })
+
+    toolbarBox.querySelectorAll('[data-move-up]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.moveUp
+        const arr = [...(toolbarSettings.visible || [])]
+        const idx = arr.indexOf(id)
+        if (idx > 0) {
+          [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]]
+          toolbarSettings = await window.browserAPI.setToolbarSettings(arr)
+          rerenderToolbarBox()
+        }
+      })
+    })
+
+    toolbarBox.querySelectorAll('[data-move-down]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.moveDown
+        const arr = [...(toolbarSettings.visible || [])]
+        const idx = arr.indexOf(id)
+        if (idx >= 0 && idx < arr.length - 1) {
+          [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]]
+          toolbarSettings = await window.browserAPI.setToolbarSettings(arr)
+          rerenderToolbarBox()
+        }
+      })
+    })
+  }
+
+  bindToolbarHandlers()
 }
 
 // ============ Загрузки ============
@@ -364,6 +478,7 @@ function renderAbout() {
           <strong>Vite</strong> — MIT License<br>
           <strong>electron-vite</strong> — MIT License<br>
           <strong>@mozilla/readability</strong> — Apache 2.0<br>
+          <strong>pdfjs-dist</strong> — Apache 2.0<br>
           <strong>DuckDuckGo Autocomplete API</strong> — публичный API<br>
           <strong>DuckDuckGo Favicon Service</strong> — публичный сервис
         </div>
@@ -376,7 +491,7 @@ function renderAbout() {
         <div class="setting-desc" style="margin-top: 8px; line-height: 1.6;">
           Учебный проект по информатике. Кроссплатформенный браузер на Electron + Vite
           с поддержкой вкладок, закладок, папок, истории, загрузок, cookie-менеджера,
-          восстановления сессии, приватного режима, режима чтения, блокировки трекеров
+          восстановления сессии, приватного режима, режима чтения, PDF-viewer, блокировки трекеров
           и кастомных разрешений. Все данные хранятся локально на устройстве пользователя.
         </div>
       </div>
@@ -411,4 +526,24 @@ window.themeManager.onAccent((data) => {
   }
 })
 
-init()
+// ============ Старт ============
+// Если в URL передан ?section=about (или другая), открываем сразу её
+function getInitialSection() {
+  const valid = ['appearance', 'downloads', 'privacy', 'about']
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const s = params.get('section')
+    if (s && valid.includes(s)) return s
+  } catch (e) {}
+  return 'appearance'
+}
+
+init().then(() => {
+  const section = getInitialSection()
+  if (section !== 'appearance') {
+    sidebarItems.forEach((x) => {
+      x.classList.toggle('active', x.dataset.section === section)
+    })
+    renderSection(section)
+  }
+})

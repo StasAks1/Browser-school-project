@@ -1,6 +1,7 @@
 const content = document.getElementById('content')
 const searchInput = document.getElementById('search-input')
 const btnClearAll = document.getElementById('btn-clear-all')
+const btnClearSites = document.getElementById('btn-clear-sites')
 const btnAdd = document.getElementById('btn-add')
 const statsEl = document.getElementById('stats')
 const toastEl = document.getElementById('toast')
@@ -321,7 +322,7 @@ function openCookieModal(mode, cookie) {
     cookieSession.checked = !!cookie.session
     cookieExpires.value = cookie.expirationDate ? unixToLocalInput(cookie.expirationDate) : ''
 
-    // При редактировании имя/домен не меняем — это уникальный идентификатор cookie
+    // При редактировании имя/домен/путь не меняем — это уникальный идентификатор cookie
     cookieName.disabled = true
     cookieDomain.disabled = true
     cookiePath.disabled = true
@@ -423,6 +424,22 @@ btnClearAll.addEventListener('click', async () => {
   )
   if (!ok) return
   await window.browserAPI.clearAllCookies()
+  await reloadCookies()
+})
+
+btnClearSites.addEventListener('click', async () => {
+  const ok = await confirmAction(
+    'Очистить все данные сайтов?',
+    'Будут удалены cookie, localStorage, IndexedDB, service workers и кэш для всех сайтов. ' +
+    'Вы выйдете из всех аккаунтов, а сайты забудут ваши настройки. Это действие нельзя отменить.'
+  )
+  if (!ok) return
+  const res = await window.browserAPI.clearSiteData()
+  if (!res.ok) {
+    showToast(res.error || 'Не удалось очистить данные')
+    return
+  }
+  showToast('Все данные сайтов очищены')
   await reloadCookies()
 })
 

@@ -407,6 +407,38 @@ window.browserAPI.getDownloads().then((list) => {
   updateDownloadsBadge(active)
 })
 
+// ============ Кастомизация тулбара ============
+const navBarEl = document.querySelector('.nav-bar')
+const settingsBtnEl = document.getElementById('btn-settings')
+
+function applyToolbarSettings(visibleList) {
+  const visible = new Set(Array.isArray(visibleList) ? visibleList : [])
+
+  // Скрываем/показываем
+  document.querySelectorAll('[data-toolbar-id]').forEach((btn) => {
+    const id = btn.dataset.toolbarId
+    btn.style.display = visible.has(id) ? '' : 'none'
+  })
+
+  // Переставляем кнопки в порядке из visibleList.
+  // insertBefore(btn, settingsBtnEl) переносит узел, если он уже в DOM.
+  if (navBarEl && settingsBtnEl) {
+    for (const id of (Array.isArray(visibleList) ? visibleList : [])) {
+      const btn = navBarEl.querySelector(`[data-toolbar-id="${id}"]`)
+      if (!btn) continue
+      navBarEl.insertBefore(btn, settingsBtnEl)
+    }
+  }
+}
+
+window.browserAPI.onToolbarSettingsChanged((data) => {
+  applyToolbarSettings(data?.visible)
+})
+
+window.browserAPI.getToolbarSettings().then((data) => {
+  applyToolbarSettings(data?.visible)
+})
+
 // ============================================================
 // ============ Поиск по странице (Cmd+F / Ctrl+F) ============
 // ============================================================

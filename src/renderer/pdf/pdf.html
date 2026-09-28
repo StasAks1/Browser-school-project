@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('browser-resolved-theme');
+        document.documentElement.dataset.theme = (t === 'light') ? 'light' : 'dark';
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    })();
+  </script>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'self' blob:;">
+  <title>PDF Viewer</title>
+  <link rel="stylesheet" href="pdf.css">
+</head>
+<body>
+  <div class="pdf-toolbar">
+    <button id="btn-prev" class="pdf-btn" title="Предыдущая страница">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <span id="page-indicator" class="pdf-indicator">— / —</span>
+    <button id="btn-next" class="pdf-btn" title="Следующая страница">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+
+    <div class="pdf-spacer"></div>
+
+    <button id="btn-zoom-out" class="pdf-btn" title="Уменьшить">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></svg>
+    </button>
+    <span id="zoom-indicator" class="pdf-indicator">100%</span>
+    <button id="btn-zoom-in" class="pdf-btn" title="Увеличить">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/></svg>
+    </button>
+    <button id="btn-zoom-fit" class="pdf-btn" title="По ширине">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
+    </button>
+  </div>
+
+  <div class="pdf-container" id="container"></div>
+  <div class="pdf-loading" id="loading">Загрузка PDF…</div>
+  <div class="pdf-error" id="error" hidden></div>
+
+  <script type="module" src="pdf.js"></script>
+</body>
+</html>

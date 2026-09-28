@@ -302,7 +302,7 @@ export function buildApplicationMenu(actions, opts = {}) {
   const helpSubmenu = [
     {
       label: 'О браузере',
-      click: safeCall(actions.openSettings),
+      click: safeCall(() => actions.openSettings('about')),
     },
     {
       label: 'Репозиторий на GitHub',
