@@ -8,6 +8,7 @@
   },
   "license": "MIT",
   "main": "out/main/index.js",
+  "desktopName": "com.stasaks1.browserproject",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -91,7 +92,7 @@
       "icon": "build/icons",
       "category": "Network",
       "maintainer": "StasAks1 <noreply@browser-project.local>",
-      "desktopName": "com.stasaks1.browserproject",
+      "syncDesktopName": true,
       "target": [
         { "target": "AppImage", "arch": ["x64"] },
         { "target": "deb", "arch": ["x64"] }
