@@ -60,6 +60,8 @@ DEBUG=1 npm run dev
 [Tab] Выгружена вкладка #3 (https://...)
 [Session] Восстановлено вкладок: 5
 [Tracker] Заблокировано: https://google-analytics.com/...
+[Cache] Кэш Chromium очищен
+[Tab] Перестановка: #2 after #5
 ```
 
 ## Отладка
@@ -92,7 +94,7 @@ DEBUG=1 npm run dev
    - Добавь функции `getMypagePagePath()` и `getMypagePageUrl()`
    - Добавь проверку `isMypagePageUrl(url)` в `isInternalUrl`
    - Добавь в `isTrustedInternalUrl`
-   - Добавь обработку в `loadTabContent`
+   - Добавь обработку в `loadTabContent` и `navigateInActiveTab`
 
 ### Добавить новый IPC-метод
 
@@ -112,6 +114,20 @@ DEBUG=1 npm run dev
 3. **Renderer**:
    ```js
    const result = await window.browserAPI.myAction(payload)
+   ```
+
+### Добавить односторонний IPC (без ответа)
+
+Для событий, где ответ не нужен — например, drag & drop:
+
+1. **Main** (`src/main/index.js`):
+   ```js
+   ipcMain.on('my-event', (_e, payload) => handleMyEvent(payload))
+   ```
+
+2. **Preload** (`src/preload/index.js`):
+   ```js
+   ipcRenderer.send('my-event', payload)
    ```
 
 ### Добавить новый хоткей
@@ -159,6 +175,24 @@ DEBUG=1 npm run dev
 4. Preload: `getMySetting`, `setMySetting`
 5. UI в `src/renderer/settings/settings.js`
 
+### Добавить новую кнопку в тулбар
+
+1. **`src/renderer/index/index.html`** — добавь кнопку:
+   ```html
+   <button id="btn-my" class="circle-btn" data-toolbar-id="my" title="Моя кнопка">
+     <svg>...</svg>
+   </button>
+   ```
+
+2. **`src/main/index.js`** — добавь `'my'` в массив `ALL_TOOLBAR_BUTTONS`
+
+3. **`src/renderer/settings/settings.js`** — добавь в `TOOLBAR_LABELS`:
+   ```js
+   my: 'Моя кнопка',
+   ```
+
+Кнопка автоматически появится в списке кастомизации в настройках. Порядок и видимость — настраиваются пользователем.
+
 ### Добавить пункт в системное меню
 
 `src/main/menu.js` — в нужном submenu (File / Edit / View / ...):
@@ -172,6 +206,29 @@ DEBUG=1 npm run dev
 ```
 
 И добавь `myAction` в `menuActions` в `src/main/index.js`.
+
+### Динамическое подменю в меню (пример «Недавно закрытые»)
+
+Если нужно подменю, которое обновляется при изменениях — передай **функцию**, которая возвращает массив пунктов:
+
+```js
+// menu.js
+{
+  label: 'Недавно закрытые',
+  submenu: typeof actions.recentlyClosedItems === 'function'
+    ? actions.recentlyClosedItems()
+    : [{ label: 'Недоступно', enabled: false }],
+}
+
+// main/index.js — menuActions
+recentlyClosedItems: () => {
+  const list = getRecentlyClosed()
+  if (list.length === 0) return [{ label: 'Пусто', enabled: false }]
+  return list.map(t => ({ label: t.title, click: () => restoreById(t.id) }))
+}
+```
+
+При каждом изменении данных вызывай `refreshMenu()` — это пересоберёт меню с актуальным списком.
 
 ## Сборка релиза
 
@@ -250,6 +307,7 @@ git push --tags
 - [electron-vite](https://electron-vite.org/)
 - [Vite](https://vitejs.dev/)
 - [@mozilla/readability](https://github.com/mozilla/readability)
+- [pdfjs-dist](https://github.com/mozilla/pdf.js)
 - [MDN Web Docs](https://developer.mozilla.org/)
 
 ---

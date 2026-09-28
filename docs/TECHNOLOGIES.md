@@ -18,6 +18,7 @@
 - Быстрая сборка через esbuild + Rollup
 - Разделение main / preload / renderer
 - Автоматическая подстановка путей
+- Поддержка `?url` для воркеров pdfjs-dist
 
 Почему electron-vite, а не webpack:
 - В 5–10 раз быстрее
@@ -37,7 +38,7 @@
 
 ### HTML + CSS
 Без фреймворков (React, Vue, Svelte). Почему:
-- 13 страниц интерфейса — не тот масштаб, чтобы тянуть фреймворк
+- 14 страниц интерфейса — не тот масштаб, чтобы тянуть фреймворк
 - Свой CSS с переменными (`:root`) позволяет легко менять тему и акцент
 - Полный контроль над каждым пикселем
 
@@ -48,12 +49,15 @@
 | `WebContentsView` | Вкладки, chrome UI, status bar | Современная замена `<webview>` |
 | `BrowserWindow` | Главное окно, попап закладки, диалог разрешений | |
 | `session.fromPartition` | Приватный режим | Отдельная сессия Chromium |
+| `session.getCacheSize` | Настройки → Приватность | Показать размер кэша |
+| `session.clearCache` | Настройки → Приватность | Очистить кэш |
 | `ipcMain` / `ipcRenderer` | Связь main ↔ renderer | |
 | `contextBridge` | Безопасный API для renderer | |
+| `webUtils.getPathForFile` | Preload, drag & drop | Получить путь к файлу в Electron 32+ |
 | `Menu.setApplicationMenu` | Системное меню | |
 | `dialog` | Сохранение файлов, выбор папок | |
 | `shell` | Открытие файлов, папок, ссылок | |
-| `webRequest.onBeforeRequest` | Блокировка трекеров | |
+| `webRequest.onBeforeRequest` | Блокировка трекеров, `data:` | |
 | `webContents.findInPage` | Поиск по странице | |
 | `session.cookies` | Cookie-менеджер | |
 | `nativeTheme` | Системная тема | |
@@ -67,6 +71,7 @@
 | Vite | 7.x | MIT | Бандлер |
 | electron-builder | 26.x | MIT | Упаковщик установщиков |
 | @mozilla/readability | 0.6.x | Apache 2.0 | Reader Mode |
+| pdfjs-dist | 4.x | Apache 2.0 | PDF-viewer |
 | GitHub Actions | — | бесплатно для public repo | CI/CD, автосборка |
 
 Полный список с текстами лицензий — см. [THIRD_PARTY_LICENSES](../THIRD_PARTY_LICENSES).
@@ -93,18 +98,20 @@
 | **React / Vue / Svelte** | Оверкилл, свой UI проще и легче |
 | **Webpack** | Заменён на Vite (быстрее, современнее) |
 | **jQuery** | Не нужен в 2026 |
-| **Tailwind CSS** | Для 13 страниц — свой CSS с переменными компактнее |
+| **Tailwind CSS** | Для 14 страниц — свой CSS с переменными компактнее |
 | **Bootstrap / Material UI** | Свой дизайн в стиле Safari |
 | **Redux / MobX** | Состояние вкладок управляется в main-процессе |
+| **Динамические списки трекеров** | Сознательный отказ — не хотим регулярных запросов к внешним серверам и утечки IP |
 
 ## Где что лежит
 
 | Технология | Файлы |
 |---|---|
 | Electron main API | `src/main/*.js` |
-| contextBridge | `src/preload/index.js` |
+| contextBridge + webUtils | `src/preload/index.js` |
 | Chrome UI | `src/renderer/index/` |
 | Внутренние страницы | `src/renderer/<page>/` |
+| PDF-viewer | `src/renderer/pdf/` |
 | Общие модули renderer | `src/renderer/shared/` |
 | Сборка | `electron.vite.config.js` |
 

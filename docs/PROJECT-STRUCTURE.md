@@ -27,22 +27,22 @@ browser_school_project/
 │
 ├── src/
 │   ├── main/
-│   │   ├── index.js
-│   │   ├── shortcuts.js
-│   │   ├── menu.js
-│   │   ├── context-menu.js
-│   │   ├── reader.js
-│   │   ├── popup.js
-│   │   ├── private.js
-│   │   ├── session.js
-│   │   ├── bookmarks-io.js
-│   │   ├── tracker-list.js
-│   │   ├── tracker-blocker.js
-│   │   ├── debug.js
-│   │   └── debug.config.js
+│   │   ├── index.js                Ядро: окно, вкладки, IPC, безопасность
+│   │   ├── shortcuts.js            Хоткеи
+│   │   ├── menu.js                 Системное меню
+│   │   ├── context-menu.js         Меню правого клика
+│   │   ├── reader.js               Reader Mode
+│   │   ├── popup.js                Обработка window.open
+│   │   ├── private.js              Приватная сессия
+│   │   ├── session.js              Session restore
+│   │   ├── bookmarks-io.js         Импорт/экспорт HTML
+│   │   ├── tracker-list.js         Список трекеров (статический)
+│   │   ├── tracker-blocker.js      Блокировка
+│   │   ├── debug.js                Логи
+│   │   └── debug.config.js         Флаги
 │   │
 │   ├── preload/
-│   │   └── index.js
+│   │   └── index.js                contextBridge + drag & drop файлов
 │   │
 │   └── renderer/
 │       ├── shared/
@@ -50,19 +50,20 @@ browser_school_project/
 │       │   ├── tooltip.js
 │       │   └── tooltip.css
 │       │
-│       ├── index/
-│       ├── startpage/
-│       ├── bookmarks/
-│       ├── history/
-│       ├── downloads/
-│       ├── cookies/
-│       ├── reader/
-│       ├── settings/
-│       ├── statusbar/
-│       ├── error/
-│       ├── warning/
-│       ├── popup/
-│       └── permission/
+│       ├── index/                  Chrome UI (табы, тулбар, find bar)
+│       ├── startpage/              Стартовая страница
+│       ├── bookmarks/              Менеджер закладок + bulk-операции
+│       ├── history/                История
+│       ├── downloads/              Загрузки
+│       ├── cookies/                Cookie-менеджер
+│       ├── reader/                 Reader Mode UI
+│       ├── settings/               Настройки (4 секции)
+│       ├── pdf/                    PDF-viewer (pdfjs-dist)
+│       ├── statusbar/              URL при наведении
+│       ├── error/                  Error-страница
+│       ├── warning/                HTTP-warning
+│       ├── popup/                  Попап закладки
+│       └── permission/             Диалог разрешений
 │
 ├── electron.vite.config.js
 ├── package.json
@@ -80,14 +81,22 @@ browser_school_project/
 - Создание окон и вкладок
 - IPC с renderer
 - Работу с файлами (bookmarks, history, downloads, settings)
-- Безопасность (CSP, разрешения, блокировка трекеров)
+- Безопасность (CSP, разрешения, блокировка трекеров, `data:` в mainFrame)
+- Ограничение размера кэша
+- PDF-viewer — чтение файла и передача данных в renderer
+- Drag & drop вкладок (перестановка массива)
+- Bulk-операции с закладками
 - Всё, что требует доступа к системе
 
 ### `src/preload/` — Preload-скрипт
-Единственный файл. Работает в изолированном контексте между main и renderer. Экспортирует `window.browserAPI` через `contextBridge`. Renderer не имеет доступа к Node.js напрямую — только через этот API.
+Единственный файл. Работает в изолированном контексте между main и renderer. Экспортирует `window.browserAPI` через `contextBridge`. Дополнительно **перехватывает drag & drop файлов** через `webUtils.getPathForFile()` и отправляет пути в main. Renderer не имеет доступа к Node.js напрямую — только через этот API.
 
 ### `src/renderer/` — Интерфейс
 Все HTML-страницы приложения. Работают как обычные веб-страницы, но с доступом к `window.browserAPI`. Без Node.js, без `require`.
+
+**Особые страницы:**
+- **`pdf/`** — PDF-viewer на `pdfjs-dist`, включает свой worker, ленивый рендер через `IntersectionObserver`, Retina-рендер (devicePixelRatio)
+- **`bookmarks/`** — кроме стандартного менеджера, поддерживает bulk-режим (выделение, массовое удаление, перемещение)
 
 ### `build/` — Иконки
 Все форматы иконок приложения. **Коммитятся в репозиторий** (не в `.gitignore`). Используются electron-builder при сборке установщиков.
@@ -112,6 +121,7 @@ browser_school_project/
 3. Добавить в `electron.vite.config.js` в `renderer.build.rollupOptions.input`
 4. Добавить путь в `src/main/index.js` — функции `getXxxPagePath` / `getXxxPageUrl`
 5. Добавить проверку в `isTrustedInternalUrl` и `isInternalUrl`
+6. Добавить ветку в `loadTabContent` и `navigateInActiveTab`
 
 ### Новый IPC-метод
 1. В `src/main/index.js` — `ipcMain.handle('my-method', ...)`
@@ -123,12 +133,17 @@ browser_school_project/
 2. В `src/main/index.js` — добавить `case` в `executeShortcut`
 3. Опционально: добавить пункт в `src/main/menu.js`
 
-### Новая настройка
+### Новую настройку
 1. В `src/main/index.js` — добавить поле в `settingsCache`
 2. В `loadSettings` / `saveSettings` — обработать
 3. IPC-методы `get-setting` / `set-setting`
 4. В `src/preload/index.js` — экспортировать
 5. В `src/renderer/settings/` — добавить UI
+
+### Новую кнопку тулбара
+1. Добавить `<button data-toolbar-id="my-id">` в `src/renderer/index/index.html`
+2. Добавить `'my-id'` в `ALL_TOOLBAR_BUTTONS` в `src/main/index.js`
+3. Добавить в `TOOLBAR_LABELS` в `src/renderer/settings/settings.js`
 
 ---
 
