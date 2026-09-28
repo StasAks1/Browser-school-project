@@ -100,14 +100,7 @@ export function attachTrackerBlocker(ses, isEnabled) {
       return
     }
 
-    // Защита: data: в mainFrame — уже была в setupSecurity
-    try {
-      const parsed = new URL(url)
-      if (parsed.protocol === 'data:' && details.resourceType === 'mainFrame') {
-        callback({ cancel: true })
-        return
-      }
-    } catch {}
+    // Защита от data: в mainFrame теперь в setupSecurity — здесь не дублируем.
 
     // Основная проверка на трекер
     if (shouldBlock(url)) {

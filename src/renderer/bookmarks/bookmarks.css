@@ -482,6 +482,132 @@ html, body {
   height: 13px;
   flex-shrink: 0;
 }
+.header-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.header-btn.active:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* ============================================================
+   ============ Bulk-режим (множественное выделение) ==========
+   ============================================================ */
+.bulk-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--modal-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+  animation: bulkIn 0.18s ease-out;
+}
+
+.bulk-bar[hidden] { display: none; }
+
+@keyframes bulkIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.bulk-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 90px;
+}
+
+.bulk-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.bulk-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 500;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+.bulk-btn:hover:not(:disabled) { background: var(--bg-active); }
+.bulk-btn:active:not(:disabled) { transform: scale(0.97); }
+.bulk-btn:disabled { opacity: 0.4; cursor: default; }
+
+.bulk-btn-danger { color: var(--danger); }
+.bulk-btn-danger:hover:not(:disabled) { background: rgba(229, 72, 77, 0.15); }
+
+.bulk-btn-secondary { color: var(--text-muted); }
+
+/* Чекбокс на карточке — виден только в режиме выделения */
+.bookmark-card .card-checkbox {
+  display: none;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  border: 2px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.12s ease, background 0.12s ease;
+  margin-right: 4px;
+}
+
+body.select-mode .bookmark-card .card-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bookmark-card .card-checkbox:hover {
+  border-color: var(--text-muted);
+}
+
+.bookmark-card .card-checkbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.bookmark-card .card-checkbox.checked::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+body.select-mode .bookmark-card {
+  cursor: pointer;
+}
+
+body.select-mode .bookmark-card .card-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.select-mode .bookmark-card.selected {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
+  border-color: var(--accent);
+}
 
 /* ============ Toast ============ */
 .toast {

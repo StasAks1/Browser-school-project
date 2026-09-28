@@ -184,7 +184,6 @@ function renderAppearance() {
 
   const toolbarBox = document.getElementById('toolbar-checkboxes')
 
-  // Собирает текущий порядок из DOM + какие чекбоксы включены
   function collectToolbarState() {
     const order = []
     toolbarBox.querySelectorAll('[data-row-id]').forEach((row) => {
@@ -195,7 +194,6 @@ function renderAppearance() {
     return order
   }
 
-  // Пересобрать UI из текущего состояния
   function rerenderToolbarBox() {
     toolbarBox.innerHTML = renderToolbarCheckboxes()
     bindToolbarHandlers()
@@ -378,6 +376,21 @@ function renderPrivacy() {
 
     <div class="setting-group">
       <div class="setting-row column">
+        <div class="setting-label">Кэш браузера</div>
+        <div class="setting-desc" style="margin-top: 8px;">
+          Chromium хранит копии страниц, картинок и скриптов на диске, чтобы сайты открывались быстрее.
+          Размер ограничен <strong>100 МБ</strong>. Очистка удалит накопленные данные —
+          сайты будут загружаться чуть медленнее, но никакие копии не останутся на устройстве.
+        </div>
+        <div class="setting-control" style="margin-top: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <span id="cache-size-label" class="cache-size-label">Размер кэша: —</span>
+          <button id="clear-cache-btn" class="btn-dl btn-dl-secondary">Очистить кэш</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-row column">
         <div class="setting-label">Хранение данных</div>
         <div class="setting-desc" style="margin-top: 8px; line-height: 1.6;">
           <strong>Что и где хранится:</strong><br>
@@ -394,12 +407,68 @@ function renderPrivacy() {
     window.browserAPI.openCookiesPage()
   })
 
+  // ============ Кэш браузера ============
+  const cacheSizeLabel = document.getElementById('cache-size-label')
+  const clearCacheBtn = document.getElementById('clear-cache-btn')
+
+  function formatBytes(bytes) {
+    if (!bytes || bytes < 0) return '0 Б'
+    const units = ['Б', 'КБ', 'МБ', 'ГБ']
+    let i = 0
+    let v = bytes
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
+    return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`
+  }
+
+  async function refreshCacheSize() {
+    try {
+      const res = await window.browserAPI.getCacheSize()
+      const bytes = res?.bytes || 0
+      cacheSizeLabel.textContent = `Размер кэша: ~${formatBytes(bytes)}`
+    } catch {
+      cacheSizeLabel.textContent = 'Размер кэша: —'
+    }
+  }
+
+  refreshCacheSize()
+
+  clearCacheBtn.addEventListener('click', async () => {
+    const sizeText = cacheSizeLabel.textContent.replace('Размер кэша: ', '')
+    const confirmed = window.confirm(
+      `Очистить кэш браузера?\n\nБудут удалены копии страниц, картинок и скриптов (сейчас: ${sizeText}).\n\nКуки, история и закладки не затрагиваются. Это действие нельзя отменить.`
+    )
+    if (!confirmed) return
+
+    const originalText = clearCacheBtn.textContent
+    clearCacheBtn.disabled = true
+    clearCacheBtn.textContent = 'Очистка…'
+
+    try {
+      const res = await window.browserAPI.clearCache()
+      if (res.ok) {
+        clearCacheBtn.textContent = 'Кэш очищен'
+        await refreshCacheSize()
+      } else {
+        clearCacheBtn.textContent = res.error || 'Ошибка'
+      }
+    } catch {
+      clearCacheBtn.textContent = 'Ошибка'
+    } finally {
+      setTimeout(() => {
+        clearCacheBtn.textContent = originalText
+        clearCacheBtn.disabled = false
+      }, 1500)
+    }
+  })
+
+  // ============ Восстановление сессии ============
   document.getElementById('restore-session-switch').addEventListener('change', async (e) => {
     const value = e.target.checked
     const res = await window.browserAPI.setSessionSetting(value)
     restoreSessionEnabled = res.restoreSession
   })
 
+  // ============ Трекеры ============
   document.getElementById('tracker-switch').addEventListener('change', async (e) => {
     const value = e.target.checked
     const res = await window.browserAPI.setTrackerSetting(value)

@@ -16,6 +16,10 @@ import { attachTrackerBlocker, getStats as getTrackerStats, resetStats as resetT
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 app.commandLine.appendSwitch('disable-features', 'HttpsFirstModeV2,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable')
+// Ограничение размера дискового кэша Chromium — 100 МБ.
+// По умолчанию Chromium может занимать несколько ГБ, что нежелательно
+// для приватности (старые данные сайтов долго лежат на диске).
+app.commandLine.appendSwitch('disk-cache-size', String(100 * 1024 * 1024))
 
 const CHROME_HEIGHT_BASE = 80
 const CHROME_HEIGHT_BOOKMARKS = 112
@@ -305,6 +309,17 @@ function setupSecurity() {
 
   attachNetworkLogger(ses)
   attachDownloadHandlerToSession(ses)
+
+  // ============ Защита от data: в mainFrame ============
+  // Всегда включена, независимо от настроек трекеров.
+  ses.webRequest.onBeforeRequest({ urls: ['data:*'] }, (details, callback) => {
+    if (details.resourceType === 'mainFrame') {
+      debugLog('Security', 'Заблокирована навигация на data: в mainFrame')
+      callback({ cancel: true })
+      return
+    }
+    callback({})
+  })
 
   // Блокировка трекеров и рекламы (обычная сессия)
   attachTrackerBlocker(ses, () => !!settingsCache.blockTrackers)
@@ -3002,6 +3017,7 @@ app.whenReady().then(() => {
     broadcastLibrary()
     return serializeLibrary()
   })
+  
   ipcMain.handle('remove-bookmark', (_e, id) => {
     const idx = bookmarksCache.findIndex(b => b.id === id)
     if (idx < 0) return serializeLibrary()
@@ -3011,6 +3027,20 @@ app.whenReady().then(() => {
     broadcastLibrary()
     return serializeLibrary()
   })
+
+  ipcMain.handle('remove-bookmarks', (_e, ids) => {
+    if (!Array.isArray(ids) || ids.length === 0) return serializeLibrary()
+    const idSet = new Set(ids)
+    const before = bookmarksCache.length
+    bookmarksCache = bookmarksCache.filter(b => !idSet.has(b.id))
+    if (bookmarksCache.length !== before) {
+      saveBookmarks()
+      updateChromeHeightForBookmarks()
+      broadcastLibrary()
+    }
+    return serializeLibrary()
+  })
+
   ipcMain.handle('rename-bookmark', (_e, id, newTitle) => {
     const bm = bookmarksCache.find(b => b.id === id)
     if (!bm) return serializeLibrary()
@@ -3042,6 +3072,26 @@ app.whenReady().then(() => {
     bm.folderId = target
     saveBookmarks()
     broadcastLibrary()
+    return serializeLibrary()
+  })
+
+  ipcMain.handle('move-bookmarks', (_e, payload) => {
+    const { ids, folderId } = payload || {}
+    if (!Array.isArray(ids) || ids.length === 0) return serializeLibrary()
+    let target = folderId || null
+    if (target && !foldersCache.find(f => f.id === target)) target = null
+    const idSet = new Set(ids)
+    let changed = false
+    for (const bm of bookmarksCache) {
+      if (idSet.has(bm.id) && bm.folderId !== target) {
+        bm.folderId = target
+        changed = true
+      }
+    }
+    if (changed) {
+      saveBookmarks()
+      broadcastLibrary()
+    }
     return serializeLibrary()
   })
   ipcMain.handle('open-bookmark-in-new-tab', (_e, id) => {
@@ -3300,6 +3350,32 @@ app.whenReady().then(() => {
     }
   })
 
+  ipcMain.handle('get-cache-size', async () => {
+    const ses = getSessionForCookies()
+    if (!ses) return { bytes: 0 }
+    try {
+      const bytes = await ses.getCacheSize()
+      return { bytes: Number(bytes) || 0 }
+    } catch (err) {
+      debugLog('Cache', `Ошибка чтения размера кэша: ${err.message}`)
+      return { bytes: 0 }
+    }
+  })
+
+  ipcMain.handle('clear-cache', async () => {
+    const ses = getSessionForCookies()
+    if (!ses) return { ok: false, error: 'Сессия недоступна' }
+    try {
+      await ses.clearCache()
+      debugLog('Cache', 'Кэш Chromium очищен')
+      return { ok: true }
+    } catch (err) {
+      debugLog('Cache', `Ошибка очистки кэша: ${err.message}`)
+      return { ok: false, error: err.message }
+    }
+  })
+
+
   ipcMain.handle('clear-all-cookies', async () => {
     const ses = getSessionForCookies()
     if (!ses) return { ok: false, error: 'Сессия недоступна' }
@@ -3348,9 +3424,31 @@ app.whenReady().then(() => {
   })
 })
 
-app.on('before-quit', () => {
-  flushSessionSave()
-  clearPrivateData()
+// ============================================================
+// ============ ЗАВЕРШЕНИЕ РАБОТЫ =============================
+// ============================================================
+let isQuitHandled = false
+
+app.on('before-quit', async (event) => {
+  if (isQuitHandled) return
+
+  // Первый раз блокируем выход, чтобы успеть всё сохранить/очистить
+  event.preventDefault()
+  isQuitHandled = true
+
+  try {
+    // 1. Синхронно сохраняем сессию
+    flushSessionSave()
+
+    // 2. Ждём очистку приватной сессии
+    await clearPrivateData()
+    debugLog('App', 'Приватные данные очищены при выходе')
+  } catch (err) {
+    console.error('[before-quit]', err)
+  }
+
+  // 3. Теперь реально выходим
+  app.quit()
 })
 
 app.on('window-all-closed', () => {

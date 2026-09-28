@@ -4,7 +4,16 @@ const content = document.getElementById('content')
 const btnNewFolder = document.getElementById('btn-new-folder')
 const btnImport = document.getElementById('btn-import')
 const btnExport = document.getElementById('btn-export')
+const btnSelectMode = document.getElementById('btn-select-mode')
 const toastEl = document.getElementById('toast')
+
+const bulkBar = document.getElementById('bulk-bar')
+const bulkCount = document.getElementById('bulk-count')
+const bulkSelectAll = document.getElementById('bulk-select-all')
+const bulkClear = document.getElementById('bulk-clear')
+const bulkMove = document.getElementById('bulk-move')
+const bulkDelete = document.getElementById('bulk-delete')
+const bulkExit = document.getElementById('bulk-exit')
 
 const editModal = document.getElementById('edit-modal')
 const editForm = document.getElementById('edit-form')
@@ -29,6 +38,10 @@ let query = ''
 let editingBookmarkId = null
 let editingFolderId = null
 let movingBookmarkId = null
+
+// Bulk-режим
+let isSelectMode = false
+const selectedBookmarkIds = new Set()
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
@@ -184,6 +197,7 @@ function createCard(bm) {
   const card = document.createElement('div')
   card.className = 'bookmark-card'
   card.dataset.id = bm.id
+  if (selectedBookmarkIds.has(bm.id)) card.classList.add('selected')
 
   const favicon = getFaviconUrl(bm)
   const initial = escapeHtml(getInitial(bm.title || bm.url))
@@ -197,7 +211,10 @@ function createCard(bm) {
     if (folder) folderBadge = `<span class="card-folder-badge">${escapeHtml(folder.name)}</span>`
   }
 
+  const checkboxHtml = `<div class="card-checkbox${selectedBookmarkIds.has(bm.id) ? ' checked' : ''}" data-checkbox></div>`
+
   card.innerHTML = `
+    ${checkboxHtml}
     <div class="card-favicon">${faviconHtml}</div>
     <div class="card-body">
       <div class="card-title">${escapeHtml(bm.title || bm.url)}${folderBadge}</div>
@@ -211,26 +228,110 @@ function createCard(bm) {
   `
 
   card.addEventListener('click', (e) => {
+    if (isSelectMode) {
+      e.preventDefault()
+      e.stopPropagation()
+      toggleBookmarkSelection(bm.id)
+      return
+    }
     if (e.target.closest('.card-btn')) return
     window.browserAPI.navigate(bm.url)
   })
 
   card.addEventListener('auxclick', (e) => {
+    if (isSelectMode) return
     if (e.button === 1) { e.preventDefault(); window.browserAPI.openBookmarkInNewTab(bm.id) }
   })
 
   card.querySelector('[data-action="edit"]').addEventListener('click', (e) => {
+    if (isSelectMode) return
     e.stopPropagation(); openEditModal(bm.id)
   })
   card.querySelector('[data-action="move"]').addEventListener('click', (e) => {
+    if (isSelectMode) return
     e.stopPropagation(); openMoveModal(bm.id)
   })
   card.querySelector('[data-action="delete"]').addEventListener('click', async (e) => {
+    if (isSelectMode) return
     e.stopPropagation()
     await window.browserAPI.removeBookmark(bm.id)
   })
 
   return card
+}
+
+// ============================================================
+// ============ BULK-РЕЖИМ ====================================
+// ============================================================
+function enterSelectMode() {
+  if (isSelectMode) return
+  isSelectMode = true
+  selectedBookmarkIds.clear()
+  document.body.classList.add('select-mode')
+  bulkBar.hidden = false
+  btnSelectMode.classList.add('active')
+  renderContent()
+  updateBulkBar()
+}
+
+function exitSelectMode() {
+  if (!isSelectMode) return
+  isSelectMode = false
+  selectedBookmarkIds.clear()
+  document.body.classList.remove('select-mode')
+  bulkBar.hidden = true
+  btnSelectMode.classList.remove('active')
+  renderContent()
+}
+
+function toggleBookmarkSelection(id) {
+  if (selectedBookmarkIds.has(id)) selectedBookmarkIds.delete(id)
+  else selectedBookmarkIds.add(id)
+
+  const card = content.querySelector(`.bookmark-card[data-id="${id}"]`)
+  if (card) {
+    const cb = card.querySelector('[data-checkbox]')
+    if (selectedBookmarkIds.has(id)) {
+      card.classList.add('selected')
+      if (cb) cb.classList.add('checked')
+    } else {
+      card.classList.remove('selected')
+      if (cb) cb.classList.remove('checked')
+    }
+  }
+  updateBulkBar()
+}
+
+function updateBulkBar() {
+  const n = selectedBookmarkIds.size
+  bulkCount.textContent = `Выбрано: ${n}`
+  bulkMove.disabled = n === 0
+  bulkDelete.disabled = n === 0
+}
+
+function selectAllVisible() {
+  const items = getVisibleBookmarks()
+  for (const bm of items) selectedBookmarkIds.add(bm.id)
+  renderContent()
+  updateBulkBar()
+}
+
+function clearSelection() {
+  selectedBookmarkIds.clear()
+  renderContent()
+  updateBulkBar()
+}
+
+async function bulkDeleteSelected() {
+  const ids = Array.from(selectedBookmarkIds)
+  if (ids.length === 0) return
+  if (!confirm(`Удалить ${ids.length} закладок? Это действие нельзя отменить.`)) return
+
+  const lib = await window.browserAPI.removeBookmarks(ids)
+  library = lib || library
+  selectedBookmarkIds.clear()
+  renderContent()
+  updateBulkBar()
 }
 
 function openEditModal(id) {
@@ -298,13 +399,30 @@ folderForm.addEventListener('submit', async (e) => {
 })
 
 function openMoveModal(bookmarkId) {
-  const bm = (library.bookmarks || []).find(b => b.id === bookmarkId)
+  const isBulk = isSelectMode && selectedBookmarkIds.size > 0
+  const ids = isBulk ? Array.from(selectedBookmarkIds) : [bookmarkId]
+
+  const bm = (library.bookmarks || []).find(b => b.id === ids[0])
   if (!bm) return
-  movingBookmarkId = bookmarkId
+  movingBookmarkId = ids[0]
+
+  let currentFolderId = bm.folderId || null
+  if (isBulk) {
+    const folderIds = new Set(ids.map(id => {
+      const b = (library.bookmarks || []).find(x => x.id === id)
+      return b ? (b.folderId || null) : null
+    }))
+    if (folderIds.size > 1) currentFolderId = '__mixed__'
+  }
 
   const folders = library.folders || []
+  const headerText = isBulk
+    ? `Переместить ${ids.length} закладок`
+    : 'Переместить в папку'
+  moveModal.querySelector('.modal-title').textContent = headerText
+
   let html = `
-    <div class="move-item${!bm.folderId ? ' selected' : ''}" data-folder="">
+    <div class="move-item${currentFolderId === null ? ' selected' : ''}" data-folder="">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
         <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
@@ -314,7 +432,7 @@ function openMoveModal(bookmarkId) {
   `
   for (const f of folders) {
     html += `
-      <div class="move-item${bm.folderId === f.id ? ' selected' : ''}" data-folder="${escapeHtml(f.id)}">
+      <div class="move-item${currentFolderId === f.id ? ' selected' : ''}" data-folder="${escapeHtml(f.id)}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
         </svg>
@@ -327,7 +445,13 @@ function openMoveModal(bookmarkId) {
   moveList.querySelectorAll('.move-item').forEach(el => {
     el.addEventListener('click', async () => {
       const folderId = el.dataset.folder || null
-      await window.browserAPI.moveBookmark({ id: movingBookmarkId, folderId })
+      if (isBulk) {
+        await window.browserAPI.moveBookmarks({ ids, folderId })
+        selectedBookmarkIds.clear()
+        updateBulkBar()
+      } else {
+        await window.browserAPI.moveBookmark({ id: movingBookmarkId, folderId })
+      }
       closeMoveModal()
     })
   })
@@ -386,6 +510,32 @@ function closeFolderActions() {
 function outsideFolderActions(e) {
   if (!e.target.closest('.folder-actions-menu')) closeFolderActions()
 }
+
+// ============ Bulk-кнопки ============
+btnSelectMode.addEventListener('click', () => {
+  if (isSelectMode) exitSelectMode()
+  else enterSelectMode()
+})
+
+bulkSelectAll.addEventListener('click', selectAllVisible)
+bulkClear.addEventListener('click', clearSelection)
+bulkDelete.addEventListener('click', bulkDeleteSelected)
+bulkMove.addEventListener('click', () => {
+  if (selectedBookmarkIds.size > 0) {
+    openMoveModal(Array.from(selectedBookmarkIds)[0])
+  }
+})
+bulkExit.addEventListener('click', exitSelectMode)
+
+// Escape выходит из bulk-режима (если не открыта модалка)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && isSelectMode) {
+    if (editModal.classList.contains('visible')) return
+    if (folderModal.classList.contains('visible')) return
+    if (moveModal.classList.contains('visible')) return
+    exitSelectMode()
+  }
+})
 
 btnNewFolder.addEventListener('click', () => openFolderCreateModal())
 
