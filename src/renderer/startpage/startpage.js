@@ -140,6 +140,17 @@ function getFaviconUrl(url) {
   return `https://icons.duckduckgo.com/ip3/${domain}.ico`
 }
 
+// ============ Drag & drop ярлыков ============
+let dragSourceIndex = -1
+let dragOverIndex = -1
+let dragOverPosition = null // 'before' | 'after'
+
+function clearDragIndicators() {
+  shortcutsContainer.querySelectorAll('.shortcut').forEach((el) => {
+    el.classList.remove('dragging', 'drag-over-left', 'drag-over-right')
+  })
+}
+
 function renderShortcuts() {
   const items = loadShortcuts()
   shortcutsContainer.innerHTML = ''
@@ -149,6 +160,7 @@ function renderShortcuts() {
     tile.className = 'shortcut'
     tile.title = item.url
     tile.dataset.index = String(index)
+    tile.draggable = true
 
     const favicon = getFaviconUrl(item.url)
     const initial = (item.title[0] || '?').toUpperCase()
@@ -162,13 +174,96 @@ function renderShortcuts() {
       <span class="shortcut-title">${escapeHtml(item.title)}</span>
     `
 
-    tile.addEventListener('click', () => {
+    tile.addEventListener('click', (e) => {
+      // Cmd/Ctrl+клик — открыть в новой вкладке
+      if (e.metaKey || e.ctrlKey) {
+        window.browserAPI.createTab(item.url)
+        return
+      }
       window.browserAPI.navigate(item.url)
+    })
+
+    // Средняя кнопка мыши — открыть в новой вкладке
+    tile.addEventListener('auxclick', (e) => {
+      if (e.button === 1) {
+        e.preventDefault()
+        window.browserAPI.createTab(item.url)
+      }
     })
 
     tile.addEventListener('contextmenu', (e) => {
       e.preventDefault()
       openShortcutMenu(index, e.clientX, e.clientY)
+    })
+
+    // ============ Drag & drop ============
+    tile.addEventListener('dragstart', (e) => {
+      dragSourceIndex = index
+      tile.classList.add('dragging')
+      try {
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', String(index))
+      } catch {}
+    })
+
+    tile.addEventListener('dragover', (e) => {
+      if (dragSourceIndex < 0) return
+      if (index === dragSourceIndex) return
+
+      e.preventDefault()
+      try { e.dataTransfer.dropEffect = 'move' } catch {}
+
+      const rect = tile.getBoundingClientRect()
+      const isAfter = e.clientX > rect.left + rect.width / 2
+
+      shortcutsContainer.querySelectorAll('.shortcut').forEach((x) => {
+        if (x !== tile) x.classList.remove('drag-over-left', 'drag-over-right')
+      })
+
+      tile.classList.toggle('drag-over-left', !isAfter)
+      tile.classList.toggle('drag-over-right', isAfter)
+
+      dragOverIndex = index
+      dragOverPosition = isAfter ? 'after' : 'before'
+    })
+
+    tile.addEventListener('dragleave', (e) => {
+      if (e.target !== tile) return
+      tile.classList.remove('drag-over-left', 'drag-over-right')
+    })
+
+    tile.addEventListener('drop', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      if (dragSourceIndex < 0 || dragOverIndex < 0) return
+      if (dragSourceIndex === dragOverIndex) {
+        clearDragIndicators()
+        dragSourceIndex = -1
+        dragOverIndex = -1
+        return
+      }
+
+      const items = loadShortcuts()
+      const [moved] = items.splice(dragSourceIndex, 1)
+      let insertIdx = dragOverIndex
+      if (dragSourceIndex < dragOverIndex) insertIdx--
+      if (dragOverPosition === 'after') insertIdx++
+      items.splice(insertIdx, 0, moved)
+
+      saveShortcuts(items)
+      renderShortcuts()
+
+      dragSourceIndex = -1
+      dragOverIndex = -1
+      dragOverPosition = null
+    })
+
+    tile.addEventListener('dragend', () => {
+      dragSourceIndex = -1
+      dragOverIndex = -1
+      dragOverPosition = null
+      clearDragIndicators()
     })
 
     shortcutsContainer.appendChild(tile)

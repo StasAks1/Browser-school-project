@@ -17,32 +17,78 @@
   <link rel="stylesheet" href="pdf.css">
 </head>
 <body>
-  <div class="pdf-toolbar">
-    <button id="btn-prev" class="pdf-btn" title="Предыдущая страница">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-    </button>
-    <span id="page-indicator" class="pdf-indicator">— / —</span>
-    <button id="btn-next" class="pdf-btn" title="Следующая страница">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-    </button>
+  <div class="pdf-app">
+    <header class="pdf-toolbar">
+      <button id="btn-sidebar" class="pdf-btn" title="Миниатюры">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7"/>
+          <rect x="14" y="3" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/>
+          <rect x="14" y="14" width="7" height="7"/>
+        </svg>
+      </button>
+      <button id="btn-prev" class="pdf-btn" title="Предыдущая страница">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <span id="page-indicator" class="pdf-indicator">— / —</span>
+      <button id="btn-next" class="pdf-btn" title="Следующая страница">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
 
-    <div class="pdf-spacer"></div>
+      <div class="pdf-spacer"></div>
 
-    <button id="btn-zoom-out" class="pdf-btn" title="Уменьшить">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></svg>
-    </button>
-    <span id="zoom-indicator" class="pdf-indicator">100%</span>
-    <button id="btn-zoom-in" class="pdf-btn" title="Увеличить">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/></svg>
-    </button>
-    <button id="btn-zoom-fit" class="pdf-btn" title="По ширине">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
-    </button>
+      <button id="btn-search" class="pdf-btn" title="Поиск (Cmd/Ctrl+F)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+      </button>
+      <button id="btn-rotate" class="pdf-btn" title="Повернуть на 90°">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 2v6h-6"/>
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+          <path d="M3 22v-6h6"/>
+          <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+        </svg>
+      </button>
+      <button id="btn-zoom-out" class="pdf-btn" title="Уменьшить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></svg>
+      </button>
+      <span id="zoom-indicator" class="pdf-indicator">100%</span>
+      <button id="btn-zoom-in" class="pdf-btn" title="Увеличить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/></svg>
+      </button>
+      <button id="btn-zoom-fit" class="pdf-btn" title="По ширине">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
+      </button>
+    </header>
+
+    <div class="pdf-findbar" id="findbar" hidden>
+      <svg class="find-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+      </svg>
+      <input type="text" id="find-input" class="find-input" placeholder="Найти в документе..." autocomplete="off" spellcheck="false">
+      <span class="find-counter" id="find-counter">0/0</span>
+      <button id="find-prev" class="pdf-btn" title="Предыдущее (Shift+Enter)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+      </button>
+      <button id="find-next" class="pdf-btn" title="Следующее (Enter)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <button id="find-close" class="pdf-btn" title="Закрыть (Esc)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="pdf-body">
+      <aside class="pdf-sidebar" id="sidebar" hidden>
+        <div class="pdf-thumbs" id="thumbs"></div>
+      </aside>
+      <main class="pdf-container" id="container"></main>
+    </div>
+
+    <div class="pdf-loading" id="loading">Загрузка PDF…</div>
+    <div class="pdf-error" id="error" hidden></div>
   </div>
-
-  <div class="pdf-container" id="container"></div>
-  <div class="pdf-loading" id="loading">Загрузка PDF…</div>
-  <div class="pdf-error" id="error" hidden></div>
 
   <script type="module" src="pdf.js"></script>
 </body>

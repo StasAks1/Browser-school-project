@@ -10,7 +10,7 @@ Electron состоит из трёх независимых контексто�
 │  MAIN (Node.js)                                  │
 │  ─ окно, вкладки, PDF-viewer                     │
 │  ─ файлы, IPC, сеть                              │
-│  ─ безопасность, ограничение кэша                │
+│  ─ безопасность, HTTPS-only, Referrer, WebRTC    │
 │  ─ Menu, dialog, session, webUtils               │
 │                                                  │
 └────────────────────┬─────────────────────────────┘
@@ -111,6 +111,53 @@ Drag & drop вкладок работает **внутри chrome UI** (это D
 
 **Важно:** во время drag обновления от main буферизуются (`pendingTabsUpdate`), чтобы DOM не перерисовался и не сломал drag. Применяются после `dragend`.
 
+## Drag & drop ярлыков на стартовой
+
+Работает полностью в renderer (`startpage.js`), без участия main.
+
+**Алгоритм:**
+1. `dragstart` на ярлыке → запоминаем `dragSourceIndex`
+2. `dragover` на соседнем ярлыке → показываем индикатор слева/справа
+3. При `drop` → splice + insert в массиве из `localStorage`
+4. `saveShortcuts()` + `renderShortcuts()` — DOM пересобирается
+
+## Контекстное меню вкладки
+
+Открывается по правому клику на вкладке. IPC `show-tab-menu(tabId)` → main строит динамическое меню:
+
+- **Дублировать вкладку**
+- **Закрыть вкладку**
+- **Закрыть другие (N)** — с подсчётом `tabs.length - 1`
+- **Закрыть вправо (N)** — по индексу вкладки
+
+Пункты `enabled: false`, если закрывать нечего. Меню строится через `Menu.buildFromTemplate` + `menu.popup({ window: mainWindow })`.
+
+## Хоткеи вкладок
+
+`shortcuts.js` распознаёт три вида комбинаций:
+- `Cmd/Ctrl + 1..9` → `switch-tab-N` (регексп `/^[1-9]$/`)
+- macOS: `Cmd+Opt+←/→` → `prev-tab` / `next-tab`
+- Win/Linux: `Ctrl+Tab` / `Ctrl+Shift+Tab` → `prev-tab` / `next-tab`
+
+В `executeShortcut` обработка `switch-tab-N` вынесена **до switch** через `command.startsWith('switch-tab-')`, потому что N переменная.
+
+## Omnibox dropdown
+
+При вводе в адресную строку — IPC `search-everywhere(query)` с debounce 120 мс. Main ищет:
+
+1. **По закладкам** — приоритет, поиск по title и url
+2. **По истории** — сортировка по свежести (`visitedAt`)
+
+Максимум 8 результатов, дедупликация по URL через `Set`. Renderer рендерит dropdown, поддерживает `↑↓` (навигация), `Enter` (переход), `Esc` (закрытие).
+
+## Экспорт истории
+
+IPC `show-history-export-menu` → нативное контекстное меню с двумя пунктами:
+- **Экспорт в JSON** — `JSON.stringify(historyCache, null, 2)`
+- **Экспорт в CSV (Excel)** — с BOM-маркером `\uFEFF` для корректной кодировки UTF-8 в Excel, экранирование кавычек по RFC 4180
+
+Результат отправляется в renderer через событие `history-export-result` (только при успехе), renderer показывает toast.
+
 ## Bulk-операции с закладками
 
 Работает в renderer (`bookmarks.js`). Есть два режима:
@@ -132,6 +179,36 @@ Drag & drop вкладок работает **внутри chrome UI** (это D
 2. Функция `applyToolbarSettings(visibleList)` скрывает/показывает кнопки по `data-toolbar-id` и переставляет их через `insertBefore`
 3. При изменении в настройках — IPC `set-toolbar-settings` + broadcast `toolbar-settings-changed` во все окна
 
+## Кастомная тема из JSON
+
+Кастомная тема — JSON с подмножеством CSS-переменных из белого списка:
+
+```
+--bg, --bg-elevated, --bg-hover, --bg-active, --bg-tab-active,
+--bg-sidebar, --bg-card, --text, --text-muted, --accent,
+--accent-hover, --border, --danger, --star
+```
+
+**Валидация значений** (`isValidColor`):
+- Только цвета: `#xxx`, `#xxxxxx`, `#xxxxxxxx`, `rgb(...)`, `rgba(...)`, `hsl(...)`, `hsla(...)`, named
+- Запрещено: `url(...)`, `expression(...)`, `javascript:`, `@import`, `<script>`
+- Максимум 64 символа
+
+**Применение:**
+1. Main хранит тему в `settingsCache.customTheme`
+2. `broadcastCustomTheme()` рассылает `custom-theme-changed` во все webContents (chrome, tabs, statusbar, popup, permission)
+3. `shared/theme.js` применяет через `document.documentElement.style.setProperty()`
+4. Кастомные переменные **перебивают** light/dark дефолты
+
+## Homepage
+
+`settingsCache.homepage` — одно из трёх значений:
+- `'startpage'` — стартовая браузера (по умолчанию)
+- `'about:blank'` — пустая
+- `'https://...'` — любой URL
+
+При `Cmd+Shift+H` → `goHomeInActiveTab()` смотрит на `settingsCache.homepage` и решает, что грузить. Если URL — проходит проверку HTTPS-only и warning-страницы.
+
 ## PDF-viewer
 
 Собственный просмотрщик на `pdfjs-dist`, не встроенный Chromium PDF viewer.
@@ -143,7 +220,13 @@ Drag & drop вкладок работает **внутри chrome UI** (это D
 4. Renderer PDF-страницы вызывает `get-pdf-data` — main читает файл и возвращает `Uint8Array`
 5. `pdfjs-dist` рендерит страницы на `<canvas>` лениво (только видимые)
 
-**Worker** подключается через Vite `?url` — работает в dev и prod.
+**Возможности:**
+- **Миниатюры** — отдельная ленивая загрузка через `IntersectionObserver` в боковой панели
+- **Поиск по тексту** — через `TextLayer` (обход всех span-ов с query, подсветка, навигация)
+- **Поворот на 90°** — пересчёт viewport через `getViewport({ rotation })`
+- **Прогресс чтения** — по имени файла в `localStorage` (`pdf-progress:<name>::<totalPages>`)
+
+**Worker** подключается через Vite `?url`.
 
 **Retina:** canvas рендерится с `devicePixelRatio`, CSS-размер = обычный. Не дублируем масштаб в `ctx.scale()` — pdfjs сам применяет transform.
 
@@ -182,7 +265,7 @@ Drag & drop вкладок работает **внутри chrome UI** (это D
 | `bookmarks.json` | Закладки + папки | main |
 | `history.json` | История (кроме приватных) | main |
 | `downloads.json` | Список загрузок | main |
-| `settings.json` | Настройки (включая порядок кнопок тулбара) | main |
+| `settings.json` | Настройки (включая порядок кнопок тулбара, homepage, customTheme) | main |
 | `session.json` | Открытые вкладки | main |
 
 ### RAM-only данные (никогда на диск)
@@ -190,13 +273,16 @@ Drag & drop вкладок работает **внутри chrome UI** (это D
 - **Стек «недавно закрытые»** — массив в main-процессе, максимум 25. Не сохраняется
 - **PDF-данные** — `Map<tabId, {path, data}>`, освобождается при закрытии вкладки
 - **Статистика блокировки трекеров** — сбрасывается при перезапуске
+- **Счётчик трекеров на активной вкладке** — `tabTrackerCounts: Map<webContentsId, count>`, сбрасывается при навигации и перезапуске
 - **Кэш подсказок DuckDuckGo** — 5 минут, только в памяти
+- **Решения по разрешениям** — `permissionDecisions: Map`, только в памяти
 
 ### localStorage в renderer
 
 - `browser-resolved-theme` — для anti-flicker (тема до отрисовки)
 - `reader:font-size` — размер шрифта в Reader Mode
 - `browser-project:shortcuts` — ярлыки на стартовой странице
+- `pdf-progress:<name>::<totalPages>` — прогресс чтения PDF
 
 ### Ключевые модули
 
@@ -220,15 +306,17 @@ Drag & drop вкладок работает **внутри chrome UI** (это D
 2. Chromium в активной вкладке запускает навигацию
 3. Main ловит событие 'will-navigate'
 4. Проверка: HTTPS? HTTP? внутренний URL?
-   ├── HTTP без разрешения → показать warning-страницу
+   ├── HTTP + HTTPS-only → warning без кнопки «перейти»
+   ├── HTTP без разрешения → warning-страница
    ├── HTTPS → продолжить
    └── внутренний → продолжить
 5. Chromium загружает страницу
-6. Событие 'did-navigate' → обновить title, favicon
+6. Событие 'did-navigate' → обновить title, favicon, сбросить счётчик трекеров
 7. Отправить IPC в chrome UI:
    - page-url (обновить адресную строку)
    - security-state (обновить индикатор)
    - tabs-updated (обновить favicon в вкладке)
+   - tracker-count (сброшен на 0)
    - history-updated (если не приватная — обновить историю)
 ```
 
@@ -240,6 +328,7 @@ Drag & drop вкладок работает **внутри chrome UI** (это D
 3. createTab():
    - Создать WebContentsView
    - Приватная? Подключить приватную сессию
+   - tabTrackerCounts.set(view.webContents.id, 0)
    - attachTabSecurityHandlers (навигация, разрешения, загрузки)
    - attachTabListeners (события вкладки)
    - Загрузить стартовую страницу
@@ -253,6 +342,9 @@ Drag & drop вкладок работает **внутри chrome UI** (это D
 - **Context Isolation** — renderer не видит Node.js
 - **Sandbox** для вкладок и попапов
 - **Блокировка `file://` и `data:`** в mainFrame — на уровне сессии, работает даже при выключенных трекерах
+- **Referrer Policy** — заголовок `Referer` обрезается до origin через `webRequest.onBeforeSendHeaders`
+- **WebRTC IP leak protection** — `webrtc-ip-handling-policy: default_public_interface_only`
+- **HTTPS-only режим** — опциональная блокировка всех HTTP-сайтов
 - **Кастомные диалоги разрешений** с кэшем решений
 - **Warning-страница** для HTTP и плохих сертификатов
 - **Блокировка трекеров** через `webRequest`

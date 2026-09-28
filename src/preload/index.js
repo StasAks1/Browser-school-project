@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
   goHome: () => ipcRenderer.invoke('go-home'),
 
   getSuggestions: (query) => ipcRenderer.invoke('get-suggestions', query),
+  searchEverywhere: (query) => ipcRenderer.invoke('search-everywhere', query),
 
   getTabs: () => ipcRenderer.invoke('get-tabs'),
   createTab: (url) => ipcRenderer.invoke('tab-create', url),
@@ -47,9 +48,6 @@ contextBridge.exposeInMainWorld('browserAPI', {
 
   getSettings: () => ipcRenderer.invoke('get-settings'),
   getTheme: () => ipcRenderer.invoke('get-theme'),
-  getToolbarSettings: () => ipcRenderer.invoke('get-toolbar-settings'),
-  setToolbarSettings: (visible) => ipcRenderer.invoke('set-toolbar-settings', visible),
-  onToolbarSettingsChanged: (cb) => ipcRenderer.on('toolbar-settings-changed', (_e, data) => cb(data)),
   setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
   getAccent: () => ipcRenderer.invoke('get-accent'),
   getAccentOptions: () => ipcRenderer.invoke('get-accent-options'),
@@ -57,6 +55,10 @@ contextBridge.exposeInMainWorld('browserAPI', {
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
   openSettingsPage: () => ipcRenderer.invoke('open-settings-page'),
+
+  getToolbarSettings: () => ipcRenderer.invoke('get-toolbar-settings'),
+  setToolbarSettings: (visible) => ipcRenderer.invoke('set-toolbar-settings', visible),
+  onToolbarSettingsChanged: (cb) => ipcRenderer.on('toolbar-settings-changed', (_e, data) => cb(data)),
 
   getDownloads: () => ipcRenderer.invoke('get-downloads'),
   getDownloadsPath: () => ipcRenderer.invoke('get-downloads-path'),
@@ -106,11 +108,12 @@ contextBridge.exposeInMainWorld('browserAPI', {
   removeCookiesByDomain: (domain) => ipcRenderer.invoke('remove-cookies-by-domain', domain),
   clearAllCookies: () => ipcRenderer.invoke('clear-all-cookies'),
   clearSiteData: () => ipcRenderer.invoke('clear-site-data'),
-  getCacheSize: () => ipcRenderer.invoke('get-cache-size'),
-  clearCache: () => ipcRenderer.invoke('clear-cache'),
   openCookiesPage: () => ipcRenderer.invoke('open-cookies-page'),
   setCookie: (payload) => ipcRenderer.invoke('set-cookie', payload),
   updateCookie: (payload) => ipcRenderer.invoke('update-cookie', payload),
+
+  getCacheSize: () => ipcRenderer.invoke('get-cache-size'),
+  clearCache: () => ipcRenderer.invoke('clear-cache'),
 
   getSessionSetting: () => ipcRenderer.invoke('get-session-setting'),
   setSessionSetting: (value) => ipcRenderer.invoke('set-session-setting', value),
@@ -121,6 +124,22 @@ contextBridge.exposeInMainWorld('browserAPI', {
   setTrackerSetting: (value) => ipcRenderer.invoke('set-tracker-setting', value),
   getTrackerStats: () => ipcRenderer.invoke('get-tracker-stats'),
   resetTrackerStats: () => ipcRenderer.invoke('reset-tracker-stats'),
+  getTrackerCount: () => ipcRenderer.invoke('get-tracker-count'),
+
+  // ============ HTTPS-only ============
+  getHttpsOnly: () => ipcRenderer.invoke('get-https-only'),
+  setHttpsOnly: (value) => ipcRenderer.invoke('set-https-only', value),
+
+  // ============ Homepage ============
+  getHomepage: () => ipcRenderer.invoke('get-homepage'),
+  setHomepage: (value) => ipcRenderer.invoke('set-homepage', value),
+
+  // ============ Кастомная тема ============
+  getCustomTheme: () => ipcRenderer.invoke('get-custom-theme'),
+  importTheme: () => ipcRenderer.invoke('import-theme'),
+  clearCustomTheme: () => ipcRenderer.invoke('clear-custom-theme'),
+  exportThemeExample: () => ipcRenderer.invoke('export-theme-example'),
+  onCustomThemeChanged: (cb) => ipcRenderer.on('custom-theme-changed', (_e, theme) => cb(theme)),
 
   exportBookmarks: () => ipcRenderer.invoke('export-bookmarks'),
   importBookmarks: () => ipcRenderer.invoke('import-bookmarks'),
@@ -138,6 +157,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
   onDownloadsUpdated: (cb) => ipcRenderer.on('downloads-updated', (_e, list) => cb(list)),
   onDownloadActiveCount: (cb) => ipcRenderer.on('download-active-count', (_e, count) => cb(count)),
   onSecurityState: (cb) => ipcRenderer.on('security-state', (_e, state) => cb(state)),
+  onTrackerCount: (cb) => ipcRenderer.on('tracker-count', (_e, count) => cb(count)),
   onTabCloseRequest: (cb) => ipcRenderer.on('tab-close-request', (_e, id) => cb(id)),
 
   onShortcutCloseTab: (cb) => ipcRenderer.on('shortcut-close-tab', () => cb()),

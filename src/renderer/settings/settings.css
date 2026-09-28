@@ -521,3 +521,85 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 8px;
 }
+
+/* ============ Homepage ============ */
+.homepage-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.homepage-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.homepage-option:hover {
+  background: var(--bg-hover);
+}
+
+.homepage-option input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin: 0;
+}
+
+/* ============ Кастомная тема ============ */
+.theme-control {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.custom-theme-status {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  line-height: 1.4;
+}
+
+.custom-theme-status strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.custom-theme-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ============ Modal input (для homepage URL) ============ */
+.modal-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.modal-input:focus { border-color: var(--accent); }
+.modal-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--bg-card);
+}

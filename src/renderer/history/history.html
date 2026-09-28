@@ -22,7 +22,10 @@
     <header class="header">
       <div class="title-row">
         <h1 class="title">История</h1>
-        <button id="btn-clear-all" class="btn-clear">Очистить всё</button>
+        <div class="title-actions">
+          <button id="btn-export" class="btn-export">Экспорт</button>
+          <button id="btn-clear-all" class="btn-clear">Очистить всё</button>
+        </div>
       </div>
       <div class="search-wrapper">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -34,6 +37,7 @@
     </header>
     <main class="content" id="content"></main>
   </div>
+  <div id="toast" class="toast"></div>
   <script type="module" src="../shared/theme.js"></script>
   <script type="module" src="../shared/tooltip.js"></script>
   <script type="module" src="history.js"></script>

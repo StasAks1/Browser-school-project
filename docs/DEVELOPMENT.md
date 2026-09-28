@@ -62,6 +62,8 @@ DEBUG=1 npm run dev
 [Tracker] Заблокировано: https://google-analytics.com/...
 [Cache] Кэш Chromium очищен
 [Tab] Перестановка: #2 after #5
+[Theme] Загружена тема "..." (N переменных)
+[PDF] Открыт PDF-viewer: /path/to/file.pdf (вкладка #N)
 ```
 
 ## Отладка
@@ -229,6 +231,118 @@ recentlyClosedItems: () => {
 ```
 
 При каждом изменении данных вызывай `refreshMenu()` — это пересоберёт меню с актуальным списком.
+
+### Добавить пункт в контекстное меню вкладки
+
+В `src/main/index.js` в `ipcMain.handle('show-tab-menu')` — добавь объект в массив `Menu.buildFromTemplate`:
+
+```js
+ipcMain.handle('show-tab-menu', (_e, tabId) => {
+  const tab = getTab(tabId)
+  if (!tab) return
+  const idx = tabs.findIndex(t => t.id === tabId)
+  const menu = Menu.buildFromTemplate([
+    { label: 'Дублировать', click: () => duplicateTab(tabId) },
+    // ← твой пункт здесь
+    { label: 'Мой пункт', click: () => { /* ... */ } },
+  ])
+  menu.popup({ window: mainWindow })
+})
+```
+
+Можешь использовать `idx`, `tabs.length` и другие переменные для вычисления состояния пункта.
+
+### Добавить CSS-переменную в кастомную тему
+
+Если хочешь разрешить пользователю переопределять ещё одну CSS-переменную:
+
+1. **`src/main/index.js`** — добавь имя переменной в `THEME_VAR_WHITELIST`:
+   ```js
+   const THEME_VAR_WHITELIST = new Set([
+     '--bg', ..., '--my-new-var',
+   ])
+   ```
+
+2. **`src/renderer/shared/theme.js`** — добавь её же в массив `CUSTOM_VARS`:
+   ```js
+   const CUSTOM_VARS = [
+     '--bg', ..., '--my-new-var',
+   ]
+   ```
+
+3. **`src/main/index.js`** — обнови `export-theme-example` — включи переменную в пример
+
+**Важно:** переменная должна существовать в CSS всех тем (`:root`, `[data-theme="light"]`, `[data-theme="dark"]`) в `index.css` и других файлах.
+
+### Добавить новый режим homepage
+
+По умолчанию поддерживаются три режима: `startpage`, `about:blank`, URL. Чтобы добавить свой:
+
+1. **`src/main/index.js`** — в `normalizeHomepage` добавь валидацию:
+   ```js
+   function normalizeHomepage(value) {
+     if (value === 'about:blank') return 'about:blank'
+     if (value === 'my-new-mode') return 'my-new-mode'  // ← новое
+     if (typeof value === 'string' && /^https?:\/\//i.test(value)) return value
+     return 'startpage'
+   }
+   ```
+
+2. **`src/main/index.js`** — в `goHomeInActiveTab` добавь ветку:
+   ```js
+   const home = settingsCache.homepage || 'startpage'
+   if (home === 'about:blank') { ... }
+   else if (home === 'my-new-mode') { /* твоя логика */ }
+   else if (home === 'startpage') { ... }
+   else { /* URL */ }
+   ```
+
+3. **`src/renderer/settings/settings.js`** — в блоке `homepage-options` добавь радиокнопку:
+   ```html
+   <label class="homepage-option">
+     <input type="radio" name="homepage-mode" value="my-new-mode" ...>
+     <span>Мой режим</span>
+   </label>
+   ```
+
+4. Обнови обработчик `change` в том же файле.
+
+### Экспорт данных в новом формате
+
+Пример с историей (`show-history-export-menu`):
+
+1. **Main** — создай функцию `export<Data>As(format)`:
+   ```js
+   async function exportHistoryAs(format) {
+     const ext = format === 'csv' ? 'csv' : 'json'
+     const result = await dialog.showSaveDialog(mainWindow, { ... })
+     if (result.canceled) return { ok: false, canceled: true }
+     // генерация контента
+     fs.writeFileSync(result.filePath, content, 'utf-8')
+     return { ok: true, path: result.filePath, count: ... }
+   }
+   ```
+
+2. **Main** — IPC с меню форматов:
+   ```js
+   ipcMain.handle('show-history-export-menu', (event) => {
+     const menu = Menu.buildFromTemplate([
+       { label: 'Экспорт в JSON', click: () => exportHistoryAs('json').then(r => {
+         if (r.ok) event.sender.send('history-export-result', r)
+       })},
+       { label: 'Экспорт в CSV', click: () => exportHistoryAs('csv').then(r => { ... }) },
+     ])
+     menu.popup({ window: BrowserWindow.fromWebContents(event.sender) })
+   })
+   ```
+
+3. **Preload** — экспорт и подписка:
+   ```js
+   showHistoryExportMenu: () => ipcRenderer.invoke('show-history-export-menu'),
+   onHistoryExportResult: (cb) => ipcRenderer.on('history-export-result', (_e, r) => cb(r)),
+   ```
+
+4. **Renderer** — кнопка + подписка на результат + toast.
 
 ## Сборка релиза
 

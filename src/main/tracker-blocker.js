@@ -82,8 +82,10 @@ export function resetStats() {
  * Навешивает обработчик блокировки на session.
  * @param {Electron.Session} ses
  * @param {() => boolean} isEnabled — функция, возвращающая текущее состояние блокировки
+ * @param {(info: {webContentsId: number, url: string, hostname: string}) => void} [onBlocked]
+ *        — колбэк, вызывается при каждом заблокированном запросе (для обновления счётчика на вкладке)
  */
-export function attachTrackerBlocker(ses, isEnabled) {
+export function attachTrackerBlocker(ses, isEnabled, onBlocked) {
   if (!ses || ses._trackerBlockerAttached) return
   ses._trackerBlockerAttached = true
 
@@ -100,7 +102,7 @@ export function attachTrackerBlocker(ses, isEnabled) {
       return
     }
 
-    // Защита от data: в mainFrame теперь в setupSecurity — здесь не дублируем.
+    // Защита от data: в mainFrame вынесена в setupSecurity — здесь не дублируем.
 
     // Основная проверка на трекер
     if (shouldBlock(url)) {
@@ -112,6 +114,20 @@ export function attachTrackerBlocker(ses, isEnabled) {
       } catch {}
 
       debugLog('Tracker', `Заблокировано: ${url}`)
+
+      // Уведомляем main для обновления счётчика на вкладке
+      if (typeof onBlocked === 'function') {
+        try {
+          let hostname = ''
+          try { hostname = new URL(url).hostname } catch {}
+          onBlocked({
+            webContentsId: details.webContentsId,
+            url,
+            hostname,
+          })
+        } catch {}
+      }
+
       callback({ cancel: true })
       return
     }

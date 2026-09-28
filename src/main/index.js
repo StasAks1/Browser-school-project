@@ -18,6 +18,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 app.commandLine.appendSwitch('disable-features', 'HttpsFirstModeV2,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable')
 // Ограничение размера дискового кэша Chromium — 100 МБ.
 app.commandLine.appendSwitch('disk-cache-size', String(100 * 1024 * 1024))
+// Защита от WebRTC IP leak — используем только публичный сетевой интерфейс.
+app.commandLine.appendSwitch('webrtc-ip-handling-policy', 'default_public_interface_only')
 
 const CHROME_HEIGHT_BASE = 80
 const CHROME_HEIGHT_BOOKMARKS = 112
@@ -64,6 +66,17 @@ const ACCENT_DEFAULT = 'orange'
 
 const ALL_TOOLBAR_BUTTONS = ['reader', 'find', 'downloads', 'history', 'reload', 'home']
 
+// Белый список CSS-переменных для кастомной темы
+const THEME_VAR_WHITELIST = new Set([
+  '--bg', '--bg-elevated', '--bg-hover', '--bg-active',
+  '--bg-tab-active', '--bg-sidebar', '--bg-card',
+  '--text', '--text-muted',
+  '--accent', '--accent-hover',
+  '--border', '--danger', '--star',
+])
+
+const COLOR_VALUE_RE = /^(#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\([^)]*\)|hsla?\([^)]*\)|[a-z]+)$/i
+
 let mainWindow = null
 let chromeView = null
 let statusBarView = null
@@ -83,28 +96,29 @@ let settingsCache = {
   restoreSession: true,
   blockTrackers: true,
   toolbarButtons: [...ALL_TOOLBAR_BUTTONS],
+  httpsOnly: false,
+  homepage: 'startpage',
+  customTheme: null,
 }
 
 const activeDownloads = new Map()
 const closedTabsStack = []
 let closedTabIdCounter = 1
 
-// Текущие menuActions для пересборки меню при изменении закрытых вкладок
 let currentMenuActions = null
 let currentMenuOptions = null
 
 const allowedInsecureHosts = new Set()
 const allowedBadCertHosts = new Set()
 
-// PDF-данные, привязанные к вкладкам: tabId -> { path, data|null }
 const pdfDataStore = new Map()
+const tabTrackerCounts = new Map()
 
 let currentChromeHeight = CHROME_HEIGHT_BASE
 let chromeAnimTimer = null
 let isQuitting = false
 let isQuitHandled = false
 
-// ============ Session restore ============
 const SESSION_SAVE_DEBOUNCE = 500
 let sessionSaveTimer = null
 let pendingSessionToRestore = null
@@ -162,6 +176,7 @@ async function requestPermissionDialog(permission, origin) {
     popupWindow.webContents.on('dom-ready', () => {
       popupWindow.webContents.send('theme-changed', getResolvedTheme())
       popupWindow.webContents.send('accent-changed', getAccentData())
+      popupWindow.webContents.send('custom-theme-changed', settingsCache.customTheme || null)
     })
 
     const payload = { origin: origin || 'Сайт', permission, label: getPermissionLabel(permission) }
@@ -183,6 +198,7 @@ async function requestPermissionDialog(permission, origin) {
       popupWindow.focus()
       popupWindow.webContents.send('theme-changed', getResolvedTheme())
       popupWindow.webContents.send('accent-changed', getAccentData())
+      popupWindow.webContents.send('custom-theme-changed', settingsCache.customTheme || null)
     })
 
     popupWindow.on('closed', () => {
@@ -279,6 +295,27 @@ function attachDownloadHandlerToSession(ses) {
 // ============================================================
 // ============ БЕЗОПАСНОСТЬ ==================================
 // ============================================================
+function handleTrackerBlocked({ webContentsId }) {
+  if (typeof webContentsId !== 'number') return
+
+  const prev = tabTrackerCounts.get(webContentsId) || 0
+  const next = prev + 1
+  tabTrackerCounts.set(webContentsId, next)
+
+  const active = getActiveTab()
+  if (
+    active &&
+    !active.isUnloaded &&
+    active.view &&
+    !active.view.webContents.isDestroyed() &&
+    active.view.webContents.id === webContentsId
+  ) {
+    if (chromeView && !chromeView.webContents.isDestroyed()) {
+      chromeView.webContents.send('tracker-count', next)
+    }
+  }
+}
+
 function setupSecurity() {
   const ses = mainWindow.webContents.session
 
@@ -315,7 +352,6 @@ function setupSecurity() {
   attachDownloadHandlerToSession(ses)
 
   // ============ Защита от data: в mainFrame ============
-  // Всегда включена, независимо от настроек трекеров.
   ses.webRequest.onBeforeRequest({ urls: ['data:*'] }, (details, callback) => {
     if (details.resourceType === 'mainFrame') {
       debugLog('Security', 'Заблокирована навигация на data: в mainFrame')
@@ -325,8 +361,22 @@ function setupSecurity() {
     callback({})
   })
 
+  // ============ Referrer Policy: обрезаем до origin ============
+  ses.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers = { ...details.requestHeaders }
+    if (headers.Referer) {
+      try {
+        const u = new URL(headers.Referer)
+        headers.Referer = u.origin + '/'
+      } catch {
+        delete headers.Referer
+      }
+    }
+    callback({ requestHeaders: headers })
+  })
+
   // Блокировка трекеров и рекламы (обычная сессия)
-  attachTrackerBlocker(ses, () => !!settingsCache.blockTrackers)
+  attachTrackerBlocker(ses, () => !!settingsCache.blockTrackers, handleTrackerBlocked)
 }
 
 function attachTabSecurityHandlers(tab) {
@@ -385,6 +435,11 @@ function attachTabSecurityHandlers(tab) {
     if (parsed.protocol === 'https:' || parsed.protocol === 'about:') return
 
     if (parsed.protocol === 'http:') {
+      if (settingsCache.httpsOnly) {
+        event.preventDefault()
+        loadWarningPage(tab, url)
+        return
+      }
       if (allowedInsecureHosts.has(parsed.hostname)) return
       event.preventDefault()
       loadWarningPage(tab, url)
@@ -401,10 +456,12 @@ function attachTabSecurityHandlers(tab) {
     let parsed = null
     try { parsed = new URL(url) } catch {}
 
-    if (parsed && parsed.protocol === 'http:' && !allowedInsecureHosts.has(parsed.hostname)) {
-      event.preventDefault()
-      loadWarningPage(tab, url)
-      return
+    if (parsed && parsed.protocol === 'http:') {
+      if (settingsCache.httpsOnly || !allowedInsecureHosts.has(parsed.hostname)) {
+        event.preventDefault()
+        loadWarningPage(tab, url)
+        return
+      }
     }
 
     if (parsed && parsed.protocol === 'file:') {
@@ -524,6 +581,36 @@ function normalizeToolbarButtons(arr) {
   return valid
 }
 
+function normalizeHomepage(value) {
+  if (value === 'about:blank') return 'about:blank'
+  if (typeof value === 'string' && /^https?:\/\//i.test(value)) return value
+  return 'startpage'
+}
+
+function isValidColor(value) {
+  if (typeof value !== 'string') return false
+  const v = value.trim()
+  if (v.length > 64) return false
+  if (/url\s*\(|expression\s*\(|javascript:|@import|<\/?script/i.test(v)) return false
+  return COLOR_VALUE_RE.test(v)
+}
+
+function normalizeCustomTheme(value) {
+  if (!value || typeof value !== 'object') return null
+  const name = typeof value.name === 'string' ? value.name.trim().slice(0, 50) : 'Моя тема'
+  if (!value.vars || typeof value.vars !== 'object') return null
+
+  const cleanVars = {}
+  for (const [key, val] of Object.entries(value.vars)) {
+    if (!THEME_VAR_WHITELIST.has(key)) continue
+    if (!isValidColor(val)) continue
+    cleanVars[key] = String(val).trim()
+  }
+
+  if (Object.keys(cleanVars).length === 0) return null
+  return { name, vars: cleanVars }
+}
+
 function loadSettings() {
   try {
     const file = getSettingsFile()
@@ -538,6 +625,9 @@ function loadSettings() {
         restoreSession: data.restoreSession !== false,
         blockTrackers: data.blockTrackers !== false,
         toolbarButtons: normalizeToolbarButtons(data.toolbarButtons),
+        httpsOnly: !!data.httpsOnly,
+        homepage: normalizeHomepage(data.homepage),
+        customTheme: normalizeCustomTheme(data.customTheme),
       }
     } else {
       settingsCache = {
@@ -548,6 +638,9 @@ function loadSettings() {
         restoreSession: true,
         blockTrackers: true,
         toolbarButtons: [...ALL_TOOLBAR_BUTTONS],
+        httpsOnly: false,
+        homepage: 'startpage',
+        customTheme: null,
       }
       saveSettings()
     }
@@ -561,6 +654,9 @@ function loadSettings() {
       restoreSession: true,
       blockTrackers: true,
       toolbarButtons: [...ALL_TOOLBAR_BUTTONS],
+      httpsOnly: false,
+      homepage: 'startpage',
+      customTheme: null,
     }
   }
 }
@@ -660,6 +756,28 @@ function broadcastToolbarSettings() {
   chromeView.webContents.send('toolbar-settings-changed', {
     visible: settingsCache.toolbarButtons,
   })
+}
+
+function broadcastCustomTheme() {
+  const payload = settingsCache.customTheme || null
+  if (chromeView && !chromeView.webContents.isDestroyed()) {
+    chromeView.webContents.send('custom-theme-changed', payload)
+  }
+  for (const tab of tabs) {
+    if (tab.isUnloaded) continue
+    if (tab.view && !tab.view.webContents.isDestroyed()) {
+      tab.view.webContents.send('custom-theme-changed', payload)
+    }
+  }
+  if (statusBarView && !statusBarView.webContents.isDestroyed()) {
+    statusBarView.webContents.send('custom-theme-changed', payload)
+  }
+  if (popupWindow && !popupWindow.isDestroyed()) {
+    popupWindow.webContents.send('custom-theme-changed', payload)
+  }
+  if (pendingPermission && pendingPermission.popupWindow && !pendingPermission.popupWindow.isDestroyed()) {
+    pendingPermission.popupWindow.webContents.send('custom-theme-changed', payload)
+  }
 }
 
 // ============================================================
@@ -1193,6 +1311,7 @@ function createStatusBar() {
   statusBarView.webContents.on('dom-ready', () => {
     statusBarView.webContents.send('theme-changed', getResolvedTheme())
     statusBarView.webContents.send('accent-changed', getAccentData())
+    statusBarView.webContents.send('custom-theme-changed', settingsCache.customTheme || null)
   })
 
   statusBarView.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
@@ -1337,13 +1456,18 @@ function normalizeToUrl(input) {
 // ============ WARNING / ERROR ===============================
 // ============================================================
 function loadWarningPage(tab, targetUrl) {
-  const params = new URLSearchParams({ url: targetUrl })
+  const params = new URLSearchParams({
+    url: targetUrl,
+    httpsOnly: settingsCache.httpsOnly ? '1' : '0',
+  })
   const pageUrl = getWarningPageUrl()
 
   if (pageUrl) {
     tab.view.webContents.loadURL(`${pageUrl}?${params.toString()}`)
   } else {
-    tab.view.webContents.loadFile(getWarningPagePath(), { query: { url: targetUrl } })
+    tab.view.webContents.loadFile(getWarningPagePath(), {
+      query: { url: targetUrl, httpsOnly: settingsCache.httpsOnly ? '1' : '0' },
+    })
   }
 
   tab.isWarningPage = true
@@ -1451,6 +1575,7 @@ function attachTabListeners(tab) {
   wc.on('dom-ready', () => {
     wc.send('theme-changed', getResolvedTheme())
     wc.send('accent-changed', getAccentData())
+    wc.send('custom-theme-changed', settingsCache.customTheme || null)
   })
 
   wc.on('found-in-page', (_e, result) => {
@@ -1479,6 +1604,12 @@ function attachTabListeners(tab) {
 
   wc.on('did-navigate', (_e, navUrl) => {
     tab.url = navUrl
+    try {
+      tabTrackerCounts.set(wc.id, 0)
+      if (tab.id === activeTabId && chromeView && !chromeView.webContents.isDestroyed()) {
+        chromeView.webContents.send('tracker-count', 0)
+      }
+    } catch (e) {}
     if (tab.id === activeTabId) hideStatusBar()
 
     if (tab.isReaderMode && !isReaderPageUrl(navUrl)) {
@@ -1559,6 +1690,7 @@ function unloadTab(tab) {
   tab.title = tab.savedTitle || tab.savedUrl
   tab.url = tab.savedUrl
 
+  try { tabTrackerCounts.delete(tab.view.webContents.id) } catch (e) {}
   try { mainWindow.contentView.removeChildView(tab.view) } catch (e) {}
   try { tab.view.webContents.close() } catch (e) {}
   tab.view = null
@@ -1581,16 +1713,19 @@ function recreateTab(tab) {
   }
   if (tab.isPrivate) {
     const privateSession = getPrivateSession()
-    attachTrackerBlocker(privateSession, () => !!settingsCache.blockTrackers)
+    attachTrackerBlocker(privateSession, () => !!settingsCache.blockTrackers, handleTrackerBlocked)
     attachDownloadHandlerToSession(privateSession)
     viewPrefs.session = privateSession
   }
 
   const view = new WebContentsView({ webPreferences: viewPrefs })
+  try { view.webContents.setVisualZoomLevelLimits(1, 3) } catch (e) {}
 
   tab.view = view
   mainWindow.contentView.addChildView(view)
   view.setBackgroundColor(tab.isPrivate ? PRIVATE_BG_COLOR : getBackgroundColor())
+
+  try { tabTrackerCounts.set(view.webContents.id, 0) } catch (e) {}
 
   attachTabSecurityHandlers(tab)
   attachTabListeners(tab)
@@ -1646,7 +1781,7 @@ function createTab(url, options = {}) {
   }
   if (isPrivate) {
     const privateSession = getPrivateSession()
-    attachTrackerBlocker(privateSession, () => !!settingsCache.blockTrackers)
+    attachTrackerBlocker(privateSession, () => !!settingsCache.blockTrackers, handleTrackerBlocked)
     attachDownloadHandlerToSession(privateSession)
     viewPrefs.session = privateSession
   }
@@ -1685,6 +1820,8 @@ function createTab(url, options = {}) {
   if (url === INTERNAL_DOWNLOADS) { tab.isDownloadsManager = true; tab.title = 'Загрузки' }
   if (url === INTERNAL_COOKIES) { tab.isCookiesManager = true; tab.title = 'Cookie' }
   if (url === INTERNAL_PDF) { tab.title = 'PDF' }
+
+  try { tabTrackerCounts.set(view.webContents.id, 0) } catch (e) {}
 
   tabs.push(tab)
   mainWindow.contentView.addChildView(view)
@@ -1754,9 +1891,11 @@ function loadTabContent(tab, url) {
   if (url && url !== 'about:blank') {
     try {
       const parsed = new URL(url)
-      if (parsed.protocol === 'http:' && !allowedInsecureHosts.has(parsed.hostname)) {
-        loadWarningPage(tab, url)
-        return
+      if (parsed.protocol === 'http:') {
+        if (settingsCache.httpsOnly || !allowedInsecureHosts.has(parsed.hostname)) {
+          loadWarningPage(tab, url)
+          return
+        }
       }
     } catch {}
     wc.loadURL(url)
@@ -1774,9 +1913,14 @@ function closeTab(id) {
   pdfDataStore.delete(id)
 
   try {
+    if (tab.view && !tab.view.webContents.isDestroyed()) {
+      tabTrackerCounts.delete(tab.view.webContents.id)
+    }
+  } catch (e) {}
+
+  try {
     const url = getTabUrl(tab)
     const title = getTabTitle(tab)
-    // Приватные вкладки НЕ кладём в «недавно закрытые» — иначе URL утечёт в меню
     if (
       !tab.isPrivate &&
       url &&
@@ -1843,6 +1987,16 @@ function switchTab(id) {
   activeTabId = id
   tab.lastActiveAt = Date.now()
   hideStatusBar()
+
+  try {
+    const c = tab.view && !tab.view.webContents.isDestroyed()
+      ? (tabTrackerCounts.get(tab.view.webContents.id) || 0)
+      : 0
+    if (chromeView && !chromeView.webContents.isDestroyed()) {
+      chromeView.webContents.send('tracker-count', c)
+    }
+  } catch (e) {}
+
   layoutViews()
   sendTabsUpdate()
   sendActiveTabUrl()
@@ -1869,7 +2023,6 @@ function restoreClosedById(id) {
 }
 
 function getRecentlyClosed() {
-  // Новые сверху
   return [...closedTabsStack].reverse()
 }
 
@@ -1963,9 +2116,11 @@ function navigateInActiveTab(input) {
 
   try {
     const parsed = new URL(url)
-    if (parsed.protocol === 'http:' && !allowedInsecureHosts.has(parsed.hostname)) {
-      loadWarningPage(tab, url)
-      return
+    if (parsed.protocol === 'http:') {
+      if (settingsCache.httpsOnly || !allowedInsecureHosts.has(parsed.hostname)) {
+        loadWarningPage(tab, url)
+        return
+      }
     }
   } catch {}
 
@@ -1994,8 +2149,28 @@ function goHomeInActiveTab() {
   tab.isErrorPage = false
   tab.isWarningPage = false
   tab.favicon = null
-  const sp = getStartpageUrl()
-  if (sp) tab.view.webContents.loadURL(sp); else tab.view.webContents.loadFile(getStartpagePath())
+
+  const home = settingsCache.homepage || 'startpage'
+
+  if (home === 'about:blank') {
+    tab.view.webContents.loadURL('about:blank')
+  } else if (home === 'startpage') {
+    const sp = getStartpageUrl()
+    if (sp) tab.view.webContents.loadURL(sp); else tab.view.webContents.loadFile(getStartpagePath())
+  } else {
+    try {
+      const parsed = new URL(home)
+      if (parsed.protocol === 'http:') {
+        if (settingsCache.httpsOnly || !allowedInsecureHosts.has(parsed.hostname)) {
+          loadWarningPage(tab, home)
+          sendTabsUpdate()
+          return
+        }
+      }
+    } catch {}
+    tab.view.webContents.loadURL(home)
+  }
+
   sendTabsUpdate()
 }
 
@@ -2045,6 +2220,7 @@ function openBookmarkPopup({ rect, bookmarkId, title, url }) {
   popupWindow.webContents.on('dom-ready', () => {
     popupWindow.webContents.send('theme-changed', getResolvedTheme())
     popupWindow.webContents.send('accent-changed', getAccentData())
+    popupWindow.webContents.send('custom-theme-changed', settingsCache.customTheme || null)
   })
 
   popupWindow.once('ready-to-show', () => {
@@ -2060,6 +2236,7 @@ function openBookmarkPopup({ rect, bookmarkId, title, url }) {
     popupWindow.focus()
     popupWindow.webContents.send('theme-changed', getResolvedTheme())
     popupWindow.webContents.send('accent-changed', getAccentData())
+    popupWindow.webContents.send('custom-theme-changed', settingsCache.customTheme || null)
   })
 
   popupWindow.on('blur', () => closeBookmarkPopup())
@@ -2121,10 +2298,19 @@ function createWindow() {
   chromeView.webContents.on('dom-ready', () => {
     chromeView.webContents.send('theme-changed', getResolvedTheme())
     chromeView.webContents.send('accent-changed', getAccentData())
+    chromeView.webContents.send('custom-theme-changed', settingsCache.customTheme || null)
     const activeCount = downloadsCache.filter(d => d.state === 'progressing' || d.state === 'paused').length
     chromeView.webContents.send('download-active-count', activeCount)
     broadcastSecurityState()
     broadcastToolbarSettings()
+
+    try {
+      const active = getActiveTab()
+      const c = active && !active.isUnloaded && active.view && !active.view.webContents.isDestroyed()
+        ? (tabTrackerCounts.get(active.view.webContents.id) || 0)
+        : 0
+      chromeView.webContents.send('tracker-count', c)
+    } catch (e) {}
   })
 
   attachShortcuts(chromeView.webContents)
@@ -2146,6 +2332,7 @@ function createWindow() {
     if (chromeAnimTimer) { clearTimeout(chromeAnimTimer); chromeAnimTimer = null }
     mainWindow = null; chromeView = null; statusBarView = null; tabs = []; activeTabId = null
     pdfDataStore.clear()
+    tabTrackerCounts.clear()
   })
 
   applyBackgroundColors()
@@ -2155,10 +2342,35 @@ function createWindow() {
 // ============ ГОРЯЧИЕ КЛАВИШИ ===============================
 // ============================================================
 function executeShortcut(command) {
+  // Обработка switch-tab-N (Cmd+1..9)
+  if (command.startsWith('switch-tab-')) {
+    const n = parseInt(command.slice('switch-tab-'.length), 10)
+    if (n >= 1 && n <= 9 && tabs[n - 1]) {
+      switchTab(tabs[n - 1].id)
+    }
+    return
+  }
+
   switch (command) {
     case 'new-tab':
       createTab()
       break
+
+    case 'next-tab': {
+      const idx = tabs.findIndex(t => t.id === activeTabId)
+      if (idx >= 0 && tabs.length > 1) {
+        switchTab(tabs[(idx + 1) % tabs.length].id)
+      }
+      break
+    }
+
+    case 'prev-tab': {
+      const idx = tabs.findIndex(t => t.id === activeTabId)
+      if (idx >= 0 && tabs.length > 1) {
+        switchTab(tabs[(idx - 1 + tabs.length) % tabs.length].id)
+      }
+      break
+    }
 
     case 'new-private-tab':
       createTab(undefined, { private: true })
@@ -2409,7 +2621,6 @@ app.whenReady().then(() => {
 
   clearPrivateData()
 
-  // ============ Меню приложения ============
   const menuActions = {
     newTab: () => createTab(),
     newPrivateTab: () => createTab(undefined, { private: true }),
@@ -2550,7 +2761,6 @@ app.whenReady().then(() => {
     openSettings: (section) => openSettingsPage(section),
     openCookies: () => openCookiesPage(),
 
-    // ============ Недавно закрытые (RAM-only) ============
     recentlyClosedItems: () => {
       const list = getRecentlyClosed()
       if (list.length === 0) {
@@ -2624,7 +2834,6 @@ app.whenReady().then(() => {
   ipcMain.handle('tabs-reorder', (_e, payload) => reorderTabs(payload))
   ipcMain.handle('navigate', (_e, input) => navigateInActiveTab(input))
 
-  // Reader mode
   ipcMain.handle('reader-toggle', () => toggleReaderMode())
   ipcMain.handle('reader-exit', () => {
     const tab = getActiveTab()
@@ -2637,7 +2846,6 @@ app.whenReady().then(() => {
     return tab.readerData
   })
 
-  // ============ PDF Viewer IPC ============
   ipcMain.handle('open-pdf-viewer', (_e, filePath) => {
     const tab = openPdfViewer(filePath)
     return tab ? { id: tab.id } : null
@@ -2700,6 +2908,13 @@ app.whenReady().then(() => {
     return isInternalUrl(url) ? '' : url
   })
 
+  ipcMain.handle('get-tracker-count', () => {
+    const active = getActiveTab()
+    if (!active || active.isUnloaded) return 0
+    if (!active.view || active.view.webContents.isDestroyed()) return 0
+    return tabTrackerCounts.get(active.view.webContents.id) || 0
+  })
+
   ipcMain.handle('get-security-state', () => {
     const active = getActiveTab()
     const url = getTabUrl(active)
@@ -2709,17 +2924,44 @@ app.whenReady().then(() => {
   ipcMain.handle('show-tab-menu', (_e, tabId) => {
     const tab = getTab(tabId)
     if (!tab) return
+    const idx = tabs.findIndex(t => t.id === tabId)
+    const othersCount = tabs.length - 1
+    const rightCount = tabs.length - idx - 1
+
     const menu = Menu.buildFromTemplate([
-      { label: 'Дублировать вкладку', click: () => duplicateTab(tabId) },
-      { label: 'Закрыть вкладку', click: () => {
-        if (chromeView && !chromeView.webContents.isDestroyed()) {
-          chromeView.webContents.send('tab-close-request', tabId)
-        }
-      }},
+      {
+        label: 'Дублировать вкладку',
+        click: () => duplicateTab(tabId),
+      },
+      { type: 'separator' },
+      {
+        label: 'Закрыть вкладку',
+        click: () => {
+          if (chromeView && !chromeView.webContents.isDestroyed()) {
+            chromeView.webContents.send('tab-close-request', tabId)
+          }
+        },
+      },
+      {
+        label: othersCount > 0 ? `Закрыть другие вкладки (${othersCount})` : 'Закрыть другие вкладки',
+        enabled: othersCount > 0,
+        click: () => {
+          if (activeTabId !== tabId) switchTab(tabId)
+          const idsToClose = tabs.filter(t => t.id !== tabId).map(t => t.id)
+          for (const id of idsToClose) closeTab(id)
+        },
+      },
+      {
+        label: rightCount > 0 ? `Закрыть вкладки справа (${rightCount})` : 'Закрыть вкладки справа',
+        enabled: rightCount > 0,
+        click: () => {
+          const idsToClose = tabs.slice(idx + 1).map(t => t.id)
+          for (const id of idsToClose) closeTab(id)
+        },
+      },
     ])
     menu.popup({ window: mainWindow })
   })
-
   ipcMain.handle('warning-go-back', () => {
     const wc = getActiveTab()?.view?.webContents
     if (wc?.canGoBack()) wc.goBack()
@@ -2727,6 +2969,10 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('warning-proceed', (_e, targetUrl) => {
+    if (settingsCache.httpsOnly) {
+      debugLog('Security', 'HTTPS-only: переход на HTTP отклонён')
+      return
+    }
     try {
       const parsed = new URL(targetUrl)
       if (parsed.protocol === 'http:') {
@@ -2890,6 +3136,104 @@ app.whenReady().then(() => {
   ipcMain.handle('reset-tracker-stats', () => {
     resetTrackerStats()
     return getTrackerStats()
+  })
+
+  // ============ HTTPS-only ============
+  ipcMain.handle('get-https-only', () => !!settingsCache.httpsOnly)
+  ipcMain.handle('set-https-only', (_e, value) => {
+    settingsCache.httpsOnly = !!value
+    saveSettings()
+    return !!settingsCache.httpsOnly
+  })
+
+  // ============ Homepage ============
+  ipcMain.handle('get-homepage', () => settingsCache.homepage || 'startpage')
+  ipcMain.handle('set-homepage', (_e, value) => {
+    settingsCache.homepage = normalizeHomepage(value)
+    saveSettings()
+    return settingsCache.homepage
+  })
+
+  // ============ Кастомная тема ============
+  ipcMain.handle('get-custom-theme', () => settingsCache.customTheme || null)
+
+  ipcMain.handle('import-theme', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Загрузить тему',
+      filters: [{ name: 'JSON тема', extensions: ['json'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || !result.filePaths.length) {
+      return { ok: false, canceled: true }
+    }
+
+    const filePath = result.filePaths[0]
+
+    let raw
+    try {
+      raw = fs.readFileSync(filePath, 'utf-8')
+    } catch (err) {
+      return { ok: false, error: 'Не удалось прочитать файл: ' + err.message }
+    }
+
+    let parsed
+    try {
+      parsed = JSON.parse(raw)
+    } catch (err) {
+      return { ok: false, error: 'Некорректный JSON: ' + err.message }
+    }
+
+    const clean = normalizeCustomTheme(parsed)
+    if (!clean) {
+      return { ok: false, error: 'В файле нет подходящих переменных темы' }
+    }
+
+    settingsCache.customTheme = clean
+    saveSettings()
+    broadcastCustomTheme()
+    debugLog('Theme', `Загружена тема "${clean.name}" (${Object.keys(clean.vars).length} переменных)`)
+
+    return { ok: true, theme: clean }
+  })
+
+  ipcMain.handle('clear-custom-theme', () => {
+    settingsCache.customTheme = null
+    saveSettings()
+    broadcastCustomTheme()
+    return { ok: true }
+  })
+
+  ipcMain.handle('export-theme-example', async () => {
+    const example = {
+      name: 'Пример тёмно-синей темы',
+      vars: {
+        '--bg': '#0a1220',
+        '--bg-elevated': '#152238',
+        '--bg-hover': '#1a2a45',
+        '--bg-active': '#213252',
+        '--bg-tab-active': '#152238',
+        '--text': '#e0e8f5',
+        '--text-muted': '#8899b3',
+        '--accent': '#3b82f6',
+        '--accent-hover': '#2563eb',
+        '--border': '#1e2f4a',
+      },
+    }
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Сохранить пример темы',
+      defaultPath: path.join(app.getPath('downloads'), 'theme-example.json'),
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (result.canceled || !result.filePath) {
+      return { ok: false, canceled: true }
+    }
+    try {
+      fs.writeFileSync(result.filePath, JSON.stringify(example, null, 2), 'utf-8')
+      return { ok: true, path: result.filePath }
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
   })
 
   // ============ Импорт/экспорт закладок ============
@@ -3286,7 +3630,69 @@ app.whenReady().then(() => {
     return serializeLibrary()
   })
 
-  ipcMain.handle('get-history', () => historyCache)
+  // ============ Экспорт истории ============
+  async function exportHistoryAs(format) {
+    const ext = format === 'csv' ? 'csv' : 'json'
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Экспорт истории',
+      defaultPath: path.join(app.getPath('downloads'), `history.${ext}`),
+      filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+      properties: ['createDirectory'],
+    })
+    if (result.canceled || !result.filePath) {
+      return { ok: false, canceled: true }
+    }
+
+    try {
+      let content = ''
+      if (ext === 'json') {
+        content = JSON.stringify(historyCache, null, 2)
+      } else {
+        const escapeCsv = (v) => {
+          const s = String(v == null ? '' : v)
+          if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"'
+          return s
+        }
+        const rows = [['url', 'title', 'visitedAt', 'visitedAtISO']]
+        for (const h of historyCache) {
+          rows.push([
+            h.url || '',
+            h.title || '',
+            String(h.visitedAt || ''),
+            h.visitedAt ? new Date(h.visitedAt).toISOString() : '',
+          ])
+        }
+        // UTF-8 BOM для Excel
+        content = '\uFEFF' + rows.map(r => r.map(escapeCsv).join(',')).join('\r\n')
+      }
+
+      fs.writeFileSync(result.filePath, content, 'utf-8')
+      debugLog('History', `Экспортировано ${historyCache.length} записей в ${result.filePath}`)
+      return { ok: true, path: result.filePath, count: historyCache.length }
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+  }
+
+  ipcMain.handle('show-history-export-menu', (event) => {
+    const menu = Menu.buildFromTemplate([
+      { label: 'Экспорт в JSON', click: () => { exportHistoryAs('json').then((r) => {
+        if (r.ok) {
+          const wc = event.sender
+          if (wc && !wc.isDestroyed()) wc.send('history-export-result', r)
+        }
+      })} },
+      { label: 'Экспорт в CSV (Excel)', click: () => { exportHistoryAs('csv').then((r) => {
+        if (r.ok) {
+          const wc = event.sender
+          if (wc && !wc.isDestroyed()) wc.send('history-export-result', r)
+        }
+      })} },
+    ])
+    const win = BrowserWindow.fromWebContents(event.sender)
+    menu.popup({ window: win || mainWindow })
+  })
+
   ipcMain.handle('remove-history-entry', (_e, id) => {
     const idx = historyCache.findIndex(h => h.id === id)
     if (idx >= 0) { historyCache.splice(idx, 1); saveHistory(); broadcastHistory() }
@@ -3500,9 +3906,53 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.handle('get-suggestions', async (_e, query) => {
-    return await fetchSuggestions(query)
+  // ============ Поиск по закладкам и истории ============
+  ipcMain.handle('search-everywhere', (_e, query) => {
+    const q = String(query || '').toLowerCase().trim()
+    if (q.length < 1) return []
+
+    const results = []
+    const seen = new Set()
+
+    // Закладки — приоритет
+    for (const b of bookmarksCache) {
+      if (results.length >= 8) break
+      if (!b.url || seen.has(b.url)) continue
+      const t = (b.title || '').toLowerCase()
+      const u = (b.url || '').toLowerCase()
+      if (t.includes(q) || u.includes(q)) {
+        seen.add(b.url)
+        results.push({
+          type: 'bookmark',
+          title: b.title || b.url,
+          url: b.url,
+          favicon: b.favicon || null,
+        })
+      }
+    }
+
+    // История — по свежести
+    if (results.length < 8) {
+      const sorted = [...historyCache].sort((a, b) => (b.visitedAt || 0) - (a.visitedAt || 0))
+      for (const h of sorted) {
+        if (results.length >= 8) break
+        if (!h.url || seen.has(h.url)) continue
+        const t = (h.title || '').toLowerCase()
+        const u = (h.url || '').toLowerCase()
+        if (t.includes(q) || u.includes(q)) {
+          seen.add(h.url)
+          results.push({
+            type: 'history',
+            title: h.title || h.url,
+            url: h.url,
+          })
+        }
+      }
+    }
+
+    return results
   })
+
 })
 
 // ============================================================

@@ -5,48 +5,72 @@
   --bg: #1a1a1a;
   --bg-toolbar: #252525;
   --bg-page: #ffffff;
+  --bg-sidebar: #202020;
+  --bg-hover: #2a2a2a;
   --text: #f0f0f0;
   --text-muted: #888;
   --border: #333;
   --accent: #de5833;
   --accent-hover: #c94a28;
   --shadow: rgba(0,0,0,0.5);
+  --highlight: rgba(255, 232, 0, 0.5);
+  --highlight-active: rgba(255, 150, 0, 0.75);
+  --selection: rgba(100, 150, 255, 0.35);
 }
 
 [data-theme="light"] {
   --bg: #f5f5f7;
   --bg-toolbar: #ffffff;
   --bg-page: #ffffff;
+  --bg-sidebar: #ececec;
+  --bg-hover: #f0f0f0;
   --text: #1a1a1a;
   --text-muted: #6b6b6b;
   --border: #dcdcdc;
   --accent: #de5833;
   --accent-hover: #c94a28;
   --shadow: rgba(0,0,0,0.15);
+  --highlight: rgba(255, 210, 0, 0.55);
+  --highlight-active: rgba(255, 130, 0, 0.7);
+  --selection: rgba(50, 120, 255, 0.25);
 }
 
 html, body {
   height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow: hidden;
 }
 
-body {
+/* ============ App root — жёстко прибит к границам view ============ */
+.pdf-app {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
 }
 
+/* ============ Toolbar ============ */
 .pdf-toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   height: 44px;
-  padding: 0 12px;
+  padding: 0 10px;
   background: var(--bg-toolbar);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  position: relative;
+  z-index: 5;
 }
 
 .pdf-btn {
@@ -61,10 +85,14 @@ body {
   align-items: center;
   justify-content: center;
   transition: background 0.12s ease, color 0.12s ease;
+  padding: 0;
+  flex-shrink: 0;
 }
-.pdf-btn:hover:not(:disabled) { background: var(--bg-page); color: var(--text); }
+.pdf-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
 .pdf-btn:active:not(:disabled) { transform: scale(0.94); }
 .pdf-btn:disabled { opacity: 0.35; cursor: default; }
+.pdf-btn.active { background: var(--accent); color: #fff; }
+.pdf-btn.active:hover { background: var(--accent-hover); color: #fff; }
 .pdf-btn svg { width: 16px; height: 16px; }
 
 .pdf-indicator {
@@ -78,6 +106,121 @@ body {
 
 .pdf-spacer { flex: 1; }
 
+/* ============ Find bar ============ */
+.pdf-findbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 10px;
+  background: var(--bg-toolbar);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  animation: findIn 0.15s ease-out;
+}
+.pdf-findbar[hidden] { display: none; }
+
+@keyframes findIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.find-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.find-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.find-input:focus { border-color: var(--accent); }
+.find-input::placeholder { color: var(--text-muted); }
+
+.find-counter {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 42px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.find-counter.empty { color: #ef4444; }
+
+/* ============ Body (sidebar + container) ============ */
+.pdf-body {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.pdf-sidebar {
+  width: 180px;
+  flex-shrink: 0;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 8px;
+  height: 100%;
+}
+.pdf-sidebar[hidden] { display: none; }
+.pdf-sidebar::-webkit-scrollbar { width: 8px; }
+.pdf-sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.pdf-thumbs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.pdf-thumb {
+  position: relative;
+  width: 140px;
+  background: var(--bg-page);
+  border: 2px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 2px 6px var(--shadow);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pdf-thumb:hover { transform: scale(1.02); }
+.pdf-thumb.active { border-color: var(--accent); }
+.pdf-thumb canvas { display: block; max-width: 100%; height: auto; }
+
+.pdf-thumb-num {
+  position: absolute;
+  bottom: 4px;
+  right: 6px;
+  font-size: 10px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* ============ Container со страницами ============ */
 .pdf-container {
   flex: 1 1 0;
   min-height: 0;
@@ -89,6 +232,8 @@ body {
   align-items: center;
   gap: 16px;
   overscroll-behavior: contain;
+  position: relative;
+  height: 100%;
 }
 
 .pdf-container::-webkit-scrollbar { width: 10px; }
@@ -106,14 +251,51 @@ body {
   flex-shrink: 0;
 }
 
-.pdf-page canvas {
+.pdf-page canvas.pdf-canvas {
   display: block;
+  position: relative;
+  z-index: 1;
 }
 
-.pdf-page.rendering {
-  opacity: 0.6;
+.pdf-page.rendering { opacity: 0.6; }
+
+/* ============ Text layer ============ */
+.text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-size-adjust: none;
+  -webkit-text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+  pointer-events: auto;
 }
 
+.text-layer span,
+.text-layer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.text-layer ::selection {
+  background: var(--selection);
+}
+
+.text-layer .highlight {
+  background-color: var(--highlight);
+  border-radius: 2px;
+}
+
+.text-layer .highlight.selected {
+  background-color: var(--highlight-active);
+}
+
+/* ============ Loading / Error ============ */
 .pdf-loading {
   position: fixed;
   inset: 0;

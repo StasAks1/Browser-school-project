@@ -15,6 +15,9 @@ const btnNewTab = document.getElementById('new-tab-btn')
 const bookmarksContainer = document.getElementById('bookmarks')
 const btnBookmarksManager = document.getElementById('btn-bookmarks-manager')
 const securityIndicator = document.getElementById('security-indicator')
+const trackerIndicator = document.getElementById('tracker-indicator')
+const trackerIndicatorCount = document.getElementById('tracker-indicator-count')
+const omniboxDropdown = document.getElementById('omnibox-dropdown')
 
 let tabsState = []
 let library = { bookmarks: [], folders: [] }
@@ -25,16 +28,21 @@ const closingTabIds = new Set()
 // ============ Drag & drop вкладок ============
 let dragSourceTabId = null
 let dragOverTabId = null
-let dragOverPosition = null  // 'before' | 'after'
+let dragOverPosition = null
 let pendingTabsUpdate = null
+
+// ============ Omnibox dropdown ============
+let omniboxResults = []
+let omniboxSelectedIndex = -1
+let omniboxDebounce = null
+
+const ICON_STAR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`
+const ICON_HISTORY = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`
 
 // ============ Определение платформы ============
 window.browserAPI.getPlatform().then((platform) => {
   document.body.dataset.platform = platform || 'unknown'
 })
-
-// ============ Тема и акцент ============
-// Управляются через shared/theme.js
 
 // ============ Индикатор безопасности ============
 function setSecurityState(state) {
@@ -50,6 +58,21 @@ function setSecurityState(state) {
 
 window.browserAPI.onSecurityState((state) => setSecurityState(state))
 window.browserAPI.getSecurityState().then((state) => setSecurityState(state))
+
+// ============ Индикатор блокировки трекеров ============
+function updateTrackerIndicator(count) {
+  const n = Number(count) || 0
+  if (n > 0) {
+    trackerIndicatorCount.textContent = n > 999 ? '999+' : String(n)
+    trackerIndicator.hidden = false
+    trackerIndicator.title = `Заблокировано трекеров: ${n}`
+  } else {
+    trackerIndicator.hidden = true
+  }
+}
+
+window.browserAPI.onTrackerCount((count) => updateTrackerIndicator(count))
+window.browserAPI.getTrackerCount().then((c) => updateTrackerIndicator(c))
 
 // ============ Загрузки: счётчик ============
 function updateDownloadsBadge(count) {
@@ -68,12 +91,22 @@ window.browserAPI.onDownloadActiveCount((count) => updateDownloadsBadge(count))
 // ============ Адресная строка ============
 form.addEventListener('submit', (e) => {
   e.preventDefault()
+
+  // Если выбран элемент в dropdown — переходим на него
+  if (omniboxSelectedIndex >= 0 && omniboxResults[omniboxSelectedIndex]) {
+    const url = omniboxResults[omniboxSelectedIndex].url
+    hideOmniboxDropdown()
+    window.browserAPI.navigate(url)
+    input.blur()
+    return
+  }
+
   const value = input.value.trim()
   if (!value) return
+  hideOmniboxDropdown()
   window.browserAPI.navigate(value)
   input.blur()
 })
-input.addEventListener('focus', () => input.select())
 
 btnBack.addEventListener('click', () => window.browserAPI.goBack())
 btnForward.addEventListener('click', () => window.browserAPI.goForward())
@@ -142,6 +175,7 @@ btnStar.addEventListener('click', async () => {
 window.browserAPI.onPageUrl((url) => {
   input.value = url || ''
   updateStarState()
+  hideOmniboxDropdown()
 })
 
 window.browserAPI.onLoading((isLoading) => {
@@ -153,8 +187,6 @@ window.browserAPI.onScrollState((isScrolled) => {
 })
 
 window.browserAPI.onTabsUpdated((tabs) => {
-  // Если идёт drag — откладываем обновление, чтобы не перерисовать DOM
-  // и не сломать drag. Применим после dragend.
   if (dragSourceTabId !== null) {
     pendingTabsUpdate = tabs
     return
@@ -276,7 +308,6 @@ function renderTabs() {
 
     // ============ Drag & drop ============
     el.addEventListener('dragstart', (e) => {
-      // Не начинаем drag, если схватились за кнопку закрытия
       if (e.target.closest('.tab-close')) {
         e.preventDefault()
         return
@@ -304,7 +335,6 @@ function renderTabs() {
       const rect = el.getBoundingClientRect()
       const isAfter = e.clientX > rect.left + rect.width / 2
 
-      // Снять индикаторы со всех остальных
       tabsContainer.querySelectorAll('.tab').forEach((x) => {
         if (x !== el) x.classList.remove('drag-over-left', 'drag-over-right')
       })
@@ -346,7 +376,6 @@ function renderTabs() {
       dragOverPosition = null
       clearDragIndicators()
 
-      // Применяем отложенное обновление (если было)
       if (pendingTabsUpdate) {
         const next = pendingTabsUpdate
         pendingTabsUpdate = null
@@ -513,14 +542,11 @@ const settingsBtnEl = document.getElementById('btn-settings')
 function applyToolbarSettings(visibleList) {
   const visible = new Set(Array.isArray(visibleList) ? visibleList : [])
 
-  // Скрываем/показываем
   document.querySelectorAll('[data-toolbar-id]').forEach((btn) => {
     const id = btn.dataset.toolbarId
     btn.style.display = visible.has(id) ? '' : 'none'
   })
 
-  // Переставляем кнопки в порядке из visibleList.
-  // insertBefore(btn, settingsBtnEl) переносит узел, если он уже в DOM.
   if (navBarEl && settingsBtnEl) {
     for (const id of (Array.isArray(visibleList) ? visibleList : [])) {
       const btn = navBarEl.querySelector(`[data-toolbar-id="${id}"]`)
@@ -662,4 +688,107 @@ window.browserAPI.onShortcutFocusAddress(() => {
 
 window.browserAPI.onShortcutBookmark(() => {
   btnStar.click()
+})
+
+// ============================================================
+// ============ Omnibox dropdown ==============================
+// ============================================================
+function hideOmniboxDropdown() {
+  omniboxDropdown.classList.remove('visible')
+  omniboxResults = []
+  omniboxSelectedIndex = -1
+}
+
+async function searchOmnibox(query) {
+  if (!query || query.length < 1) { hideOmniboxDropdown(); return }
+
+  try {
+    const results = await window.browserAPI.searchEverywhere(query)
+    omniboxResults = Array.isArray(results) ? results : []
+    omniboxSelectedIndex = -1
+    renderOmniboxDropdown()
+  } catch (err) {
+    hideOmniboxDropdown()
+  }
+}
+
+function renderOmniboxDropdown() {
+  if (omniboxResults.length === 0) {
+    hideOmniboxDropdown()
+    return
+  }
+
+  omniboxDropdown.innerHTML = omniboxResults.map((r, i) => `
+    <div class="omnibox-item${i === omniboxSelectedIndex ? ' selected' : ''}" data-index="${i}">
+      <div class="omnibox-item-icon">${r.type === 'bookmark' ? ICON_STAR : ICON_HISTORY}</div>
+      <div class="omnibox-item-body">
+        <div class="omnibox-item-title">${escapeHtml(r.title)}</div>
+        <div class="omnibox-item-url">${escapeHtml(r.url)}</div>
+      </div>
+    </div>
+  `).join('')
+
+  omniboxDropdown.classList.add('visible')
+
+  omniboxDropdown.querySelectorAll('.omnibox-item').forEach((el) => {
+    el.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const idx = parseInt(el.dataset.index, 10)
+      if (!omniboxResults[idx]) return
+      const url = omniboxResults[idx].url
+      hideOmniboxDropdown()
+      window.browserAPI.navigate(url)
+      input.blur()
+    })
+  })
+}
+
+input.addEventListener('input', () => {
+  clearTimeout(omniboxDebounce)
+  omniboxDebounce = setTimeout(() => {
+    searchOmnibox(input.value.trim())
+  }, 120)
+})
+
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    hideOmniboxDropdown()
+    return
+  }
+
+  if (!omniboxDropdown.classList.contains('visible')) return
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    omniboxSelectedIndex = Math.min(omniboxSelectedIndex + 1, omniboxResults.length - 1)
+    renderOmniboxDropdown()
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    omniboxSelectedIndex = Math.max(omniboxSelectedIndex - 1, -1)
+    renderOmniboxDropdown()
+  }
+})
+
+// Blur — скрываем dropdown с задержкой, чтобы mousedown успел сработать
+input.addEventListener('blur', () => {
+  setTimeout(hideOmniboxDropdown, 150)
+})
+
+// Фокус — выделяем весь URL, чтобы следующий ввод его заменил
+input.addEventListener('focus', () => {
+  const v = input.value.trim()
+  if (v) {
+    input.select()
+  }
+})
+
+// Клик — если поле уже в фокусе и ничего не выделено, выделяем весь URL
+input.addEventListener('click', () => {
+  const v = input.value.trim()
+  if (!v) return
+  if (input.selectionStart === input.selectionEnd) {
+    input.select()
+  }
 })

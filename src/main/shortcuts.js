@@ -8,7 +8,25 @@ export function matchShortcut(input) {
   const key = (input.key || '').toLowerCase()
   const mod = input.meta || input.control
   const shift = !!input.shift
+  const alt = !!input.alt
   const isMac = process.platform === 'darwin'
+
+  // ============ Переключение вкладок (без модификаторов по номеру) ============
+  // Cmd+1..9 / Ctrl+1..9 — переход на N-ную вкладку
+  if (mod && !shift && !alt && /^[1-9]$/.test(key)) {
+    return `switch-tab-${key}`
+  }
+
+  // macOS: Cmd+Opt+←/→ — соседняя вкладка
+  if (isMac && input.meta && alt && !shift) {
+    if (key === 'arrowleft') return 'prev-tab'
+    if (key === 'arrowright') return 'next-tab'
+  }
+
+  // Win/Linux: Ctrl+Tab / Ctrl+Shift+Tab — циклический переход
+  if (!isMac && input.control && !alt) {
+    if (key === 'tab') return shift ? 'prev-tab' : 'next-tab'
+  }
 
   // ============ Без модификаторов ============
   if (!mod) {
@@ -37,7 +55,7 @@ export function matchShortcut(input) {
     if (isMac && input.meta && !input.control) return null
     return 'open-history'
   }
-  if (key === ',' ) return 'open-settings'
+  if (key === ',') return 'open-settings'
   if (key === 'o' && shift) return 'open-bookmarks-manager'
 
   // Режим чтения

@@ -10,6 +10,9 @@ let restoreSessionEnabled = true
 let trackerEnabled = true
 let trackerStats = { total: 0, byDomain: [] }
 let toolbarSettings = { all: [], visible: [] }
+let httpsOnlyEnabled = false
+let homepageValue = 'startpage'
+let customTheme = null
 
 // ============ Инициализация ============
 async function init() {
@@ -25,6 +28,9 @@ async function init() {
   trackerStats = trackerSetting.stats || { total: 0, byDomain: [] }
 
   toolbarSettings = await window.browserAPI.getToolbarSettings()
+  httpsOnlyEnabled = await window.browserAPI.getHttpsOnly()
+  homepageValue = await window.browserAPI.getHomepage()
+  customTheme = await window.browserAPI.getCustomTheme()
 
   renderSection('appearance')
 
@@ -57,7 +63,6 @@ const TOOLBAR_LABELS = {
 function renderToolbarCheckboxes() {
   const visible = new Set(toolbarSettings.visible || [])
   const order = Array.isArray(toolbarSettings.visible) ? toolbarSettings.visible : []
-  // Все id: сначала видимые в порядке, потом скрытые
   const all = [...order, ...(toolbarSettings.all || []).filter(id => !order.includes(id))]
 
   return all.map((id, idx) => {
@@ -96,6 +101,8 @@ function renderAppearance() {
       <span class="accent-circle" style="background: ${opt.color};"></span>
     </button>
   `).join('')
+
+  const isCustomHomepage = homepageValue !== 'startpage' && homepageValue !== 'about:blank'
 
   content.innerHTML = `
     <div class="section-title">Внешний вид</div>
@@ -154,6 +161,60 @@ function renderAppearance() {
         <div class="setting-control" style="width: 100%; margin-top: 8px;">
           <div class="toolbar-checkboxes" id="toolbar-checkboxes">
             ${renderToolbarCheckboxes()}
+          </div>
+        </div>
+      </div>
+
+      <div class="setting-row column">
+        <div class="setting-body">
+          <div class="setting-label">Домашняя страница</div>
+          <div class="setting-desc">Что открывается при нажатии кнопки «Домой» (Cmd/Ctrl+Shift+H)</div>
+        </div>
+        <div class="setting-control" style="width: 100%; margin-top: 12px;">
+          <div class="homepage-options" id="homepage-options">
+            <label class="homepage-option">
+              <input type="radio" name="homepage-mode" value="startpage" ${homepageValue === 'startpage' ? 'checked' : ''}>
+              <span>Стартовая страница браузера</span>
+            </label>
+            <label class="homepage-option">
+              <input type="radio" name="homepage-mode" value="about:blank" ${homepageValue === 'about:blank' ? 'checked' : ''}>
+              <span>Пустая страница</span>
+            </label>
+            <label class="homepage-option">
+              <input type="radio" name="homepage-mode" value="custom" ${isCustomHomepage ? 'checked' : ''}>
+              <span>Пользовательский адрес</span>
+            </label>
+          </div>
+          <input
+            type="text"
+            id="homepage-url-input"
+            class="modal-input"
+            style="margin-top: 10px; width: 100%;"
+            placeholder="https://example.com"
+            value="${isCustomHomepage ? escapeHtml(homepageValue) : ''}"
+            ${!isCustomHomepage ? 'disabled' : ''}
+          >
+        </div>
+      </div>
+
+      <div class="setting-row column">
+        <div class="setting-body">
+          <div class="setting-label">Кастомная тема из файла</div>
+          <div class="setting-desc">
+            Загрузите JSON-файл с переменными темы (цвета фона, текста, акцента).
+            Если тема активна — перебивает светлую/тёмную.
+          </div>
+        </div>
+        <div class="setting-control theme-control" style="width: 100%; margin-top: 12px;">
+          <div class="custom-theme-status" id="custom-theme-status">
+            ${customTheme
+              ? `<strong>${escapeHtml(customTheme.name || 'Без названия')}</strong> — активно`
+              : 'Кастомная тема не активна'}
+          </div>
+          <div class="custom-theme-actions">
+            <button id="import-theme-btn" class="btn-dl">Загрузить тему…</button>
+            ${customTheme ? '<button id="clear-theme-btn" class="btn-dl btn-dl-secondary">Сбросить</button>' : ''}
+            <button id="export-theme-btn" class="btn-dl btn-dl-secondary">Скачать пример</button>
           </div>
         </div>
       </div>
@@ -235,6 +296,92 @@ function renderAppearance() {
   }
 
   bindToolbarHandlers()
+
+  // ============ Homepage ============
+  const homepageOptions = document.getElementById('homepage-options')
+  const homepageInput = document.getElementById('homepage-url-input')
+
+  homepageOptions.querySelectorAll('input[name="homepage-mode"]').forEach((radio) => {
+    radio.addEventListener('change', async () => {
+      const mode = radio.value
+      if (mode === 'startpage') {
+        homepageInput.disabled = true
+        homepageInput.value = ''
+        homepageValue = await window.browserAPI.setHomepage('startpage')
+      } else if (mode === 'about:blank') {
+        homepageInput.disabled = true
+        homepageInput.value = ''
+        homepageValue = await window.browserAPI.setHomepage('about:blank')
+      } else {
+        homepageInput.disabled = false
+        homepageInput.focus()
+        const v = homepageInput.value.trim()
+        if (v && /^https?:\/\//i.test(v)) {
+          homepageValue = await window.browserAPI.setHomepage(v)
+        }
+      }
+    })
+  })
+
+  let homepageSaveTimer = null
+  homepageInput.addEventListener('input', () => {
+    clearTimeout(homepageSaveTimer)
+    homepageSaveTimer = setTimeout(async () => {
+      const v = homepageInput.value.trim()
+      if (!v) return
+      homepageValue = await window.browserAPI.setHomepage(v)
+    }, 600)
+  })
+
+  // ============ Кастомная тема ============
+  const importThemeBtn = document.getElementById('import-theme-btn')
+  const clearThemeBtn = document.getElementById('clear-theme-btn')
+  const exportThemeBtn = document.getElementById('export-theme-btn')
+  const themeStatus = document.getElementById('custom-theme-status')
+
+  importThemeBtn.addEventListener('click', async () => {
+    importThemeBtn.disabled = true
+    try {
+      const res = await window.browserAPI.importTheme()
+      if (res.ok) {
+        customTheme = res.theme
+        themeStatus.innerHTML = `<strong>${escapeHtml(customTheme.name)}</strong> — активно`
+        renderAppearance()
+      } else if (!res.canceled) {
+        window.alert(res.error || 'Не удалось загрузить тему')
+      }
+    } catch (err) {
+      window.alert('Ошибка загрузки темы')
+    } finally {
+      importThemeBtn.disabled = false
+    }
+  })
+
+  if (clearThemeBtn) {
+    clearThemeBtn.addEventListener('click', async () => {
+      await window.browserAPI.clearCustomTheme()
+      customTheme = null
+      renderAppearance()
+    })
+  }
+
+  exportThemeBtn.addEventListener('click', async () => {
+    exportThemeBtn.disabled = true
+    try {
+      const res = await window.browserAPI.exportThemeExample()
+      if (res.ok) {
+        const original = exportThemeBtn.textContent
+        exportThemeBtn.textContent = 'Сохранено'
+        setTimeout(() => { exportThemeBtn.textContent = original }, 1500)
+      } else if (!res.canceled) {
+        window.alert(res.error || 'Не удалось сохранить пример')
+      }
+    } catch {
+      window.alert('Ошибка сохранения')
+    } finally {
+      exportThemeBtn.disabled = false
+    }
+  })
 }
 
 // ============ Загрузки ============
@@ -341,6 +488,24 @@ function renderPrivacy() {
         ${topDomainsHtml}
         <div class="setting-control" style="margin-top: 12px;">
           <button id="reset-tracker-stats" class="btn-dl btn-dl-secondary">Сбросить статистику</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-row">
+        <div class="setting-body">
+          <div class="setting-label">Только HTTPS</div>
+          <div class="setting-desc">
+            Блокирует все незащищённые сайты (HTTP). Это защищает от перехвата данных —
+            паролей, сообщений, платёжной информации — третьими лицами.
+          </div>
+        </div>
+        <div class="setting-control">
+          <label class="switch">
+            <input type="checkbox" id="https-only-switch" ${httpsOnlyEnabled ? 'checked' : ''}>
+            <span class="slider"></span>
+          </label>
         </div>
       </div>
     </div>
@@ -459,6 +624,11 @@ function renderPrivacy() {
         clearCacheBtn.disabled = false
       }, 1500)
     }
+  })
+
+  // ============ HTTPS-only ============
+  document.getElementById('https-only-switch').addEventListener('change', async (e) => {
+    httpsOnlyEnabled = await window.browserAPI.setHttpsOnly(e.target.checked)
   })
 
   // ============ Восстановление сессии ============
@@ -596,7 +766,6 @@ window.themeManager.onAccent((data) => {
 })
 
 // ============ Старт ============
-// Если в URL передан ?section=about (или другая), открываем сразу её
 function getInitialSection() {
   const valid = ['appearance', 'downloads', 'privacy', 'about']
   try {

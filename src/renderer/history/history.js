@@ -1,6 +1,16 @@
 const content = document.getElementById('content')
 const searchInput = document.getElementById('search-input')
 const btnClearAll = document.getElementById('btn-clear-all')
+const btnExport = document.getElementById('btn-export')
+const toastEl = document.getElementById('toast')
+
+let toastTimer = null
+function showToast(msg) {
+  toastEl.textContent = msg
+  toastEl.classList.add('visible')
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => toastEl.classList.remove('visible'), 2800)
+}
 
 let allHistory = []
 let query = ''
@@ -158,9 +168,20 @@ window.browserAPI.onHistoryUpdated(async () => {
   render()
 })
 
-window.browserAPI.getHistory().then((h) => {
-  allHistory = h || []
-  render()
+btnExport.addEventListener('click', () => {
+  if (!allHistory.length) {
+    showToast('История пуста')
+    return
+  }
+  window.browserAPI.showHistoryExportMenu()
+})
+
+window.browserAPI.onHistoryExportResult((res) => {
+  if (res && res.ok) {
+    showToast(`Экспортировано: ${res.count} записей`)
+  } else if (res && !res.canceled) {
+    showToast(res.error || 'Не удалось экспортировать')
+  }
 })
 
 // Тема и акцент: см. shared/theme.js
