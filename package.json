@@ -91,6 +91,7 @@
       "icon": "build/icons",
       "category": "Network",
       "maintainer": "StasAks1 <noreply@browser-project.local>",
+      "desktopName": "com.stasaks1.browserproject",
       "target": [
         { "target": "AppImage", "arch": ["x64"] },
         { "target": "deb", "arch": ["x64"] }
