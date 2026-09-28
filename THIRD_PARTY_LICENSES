@@ -1,89 +1,185 @@
-THIRD-PARTY SOFTWARE NOTICES
-=============================
+# Сторонние библиотеки и лицензии
 
-This project uses the following third-party software.
-Each component is used under the terms of its respective license.
+Проект использует следующие сторонние библиотеки и сервисы. Все они
+распространяются под свободными лицензиями, совместимыми с MIT.
 
---------------------------------------------------------------------------------
-Electron
---------------------------------------------------------------------------------
-Version:    44.x
-License:    MIT
-Homepage:   https://www.electronjs.org/
-Repository: https://github.com/electron/electron
-Copyright:  Copyright (c) Electron contributors
-            Copyright (c) 2013-2020 GitHub Inc.
+---
 
---------------------------------------------------------------------------------
-electron-vite
---------------------------------------------------------------------------------
-Version:    5.x
-License:    MIT
-Homepage:   https://electron-vite.org/
-Repository: https://github.com/alex8088/electron-vite
-Copyright:  Copyright (c) alex8088
+## Прямые зависимости (runtime)
 
---------------------------------------------------------------------------------
-Vite
---------------------------------------------------------------------------------
-Version:    7.x
-License:    MIT
-Homepage:   https://vitejs.dev/
-Repository: https://github.com/vitejs/vite
-Copyright:  Copyright (c) 2019-present, Yuxi (Evan) You and Vite contributors
+### Electron
 
---------------------------------------------------------------------------------
-electron-builder
---------------------------------------------------------------------------------
-Version:    26.x
-License:    MIT
-Homepage:   https://www.electron.build/
-Repository: https://github.com/electron-userland/electron-builder
-Copyright:  Copyright (c) 2015 Loopline Systems
+- **Версия:** 44.x
+- **Лицензия:** MIT
+- **Сайт:** https://www.electronjs.org/
+- **Репозиторий:** https://github.com/electron/electron
+- **Для чего:** фреймворк для десктопных приложений (Chromium + Node.js)
 
---------------------------------------------------------------------------------
-Chromium
---------------------------------------------------------------------------------
-Version:    bundled with Electron
-License:    BSD 3-Clause
-Homepage:   https://www.chromium.org/
-Repository: https://chromium.googlesource.com/chromium/src/
-Copyright:  Copyright (c) The Chromium Authors
+```
+MIT License
 
---------------------------------------------------------------------------------
-Node.js
---------------------------------------------------------------------------------
-Version:    bundled with Electron
-License:    MIT
-Homepage:   https://nodejs.org/
-Repository: https://github.com/nodejs/node
-Copyright:  Copyright (c) Node.js contributors
+Copyright (c) Electron contributors
+Copyright (c) 2013-2020 GitHub Inc.
 
---------------------------------------------------------------------------------
-DuckDuckGo Autocomplete API
---------------------------------------------------------------------------------
-Usage:      Search suggestions
-Type:       Public API, no authentication required
-Terms:      https://duckduckgo.com/api
-Note:       Requests are performed on behalf of the user only.
-            No user identifiers, telemetry, or personal data are sent.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
---------------------------------------------------------------------------------
-DuckDuckGo Favicon Service
---------------------------------------------------------------------------------
-Usage:      Website icons for bookmarks and history
-Type:       Public service
-Terms:      https://duckduckgo.com/api
-Note:       Only the domain name is sent to fetch the icon.
-            No user identifiers or personal data are transmitted.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
---------------------------------------------------------------------------------
-Summary
---------------------------------------------------------------------------------
-All third-party components listed above are distributed under permissive
-licenses (MIT, BSD 3-Clause) that allow free use, modification, and
-redistribution provided that the original copyright notice and license
-text are preserved.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
-For the full text of each license, please refer to the respective project
-repositories or the node_modules directory of this project.
+### @mozilla/readability
+
+- **Версия:** 0.6.x
+- **Лицензия:** Apache License 2.0
+- **Репозиторий:** https://github.com/mozilla/readability
+- **Для чего:** извлечение основного содержимого статьи для Reader Mode
+
+```
+Copyright (c) 2010 Arc90 Inc
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+### pdfjs-dist
+
+- **Версия:** 4.x
+- **Лицензия:** Apache License 2.0
+- **Репозиторий:** https://github.com/mozilla/pdf.js
+- **Для чего:** рендеринг PDF-документов в собственном PDF-viewer
+
+```
+Copyright 2012 Mozilla Foundation
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+---
+
+## Зависимости для сборки (devDependencies)
+
+Эти библиотеки используются только во время разработки и не попадают
+в собранное приложение.
+
+### electron-vite
+
+- **Версия:** 5.x
+- **Лицензия:** MIT
+- **Репозиторий:** https://github.com/alex8088/electron-vite
+- **Для чего:** сборщик и dev-сервер для Electron-приложений
+
+### Vite
+
+- **Версия:** 7.x
+- **Лицензия:** MIT
+- **Репозиторий:** https://github.com/vitejs/vite
+- **Для чего:** бандлер и dev-сервер для renderer-процесса
+
+### electron-builder
+
+- **Версия:** 26.x
+- **Лицензия:** MIT
+- **Репозиторий:** https://github.com/electron-userland/electron-builder
+- **Для чего:** упаковка приложения в установщики (`.dmg`, `.exe`, `.AppImage`, `.deb`)
+
+---
+
+## Публичные API (не библиотеки)
+
+### DuckDuckGo Autocomplete API
+
+- **URL:** https://duckduckgo.com/ac/
+- **Использование:** публичный API без аутентификации, для подсказок в поисковой строке
+- **Что отправляется:** только текст запроса
+- **Лицензия:** публичный сервис, использование в соответствии с условиями DuckDuckGo
+
+### DuckDuckGo Favicon Service
+
+- **URL:** https://icons.duckduckgo.com/ip3/
+- **Использование:** публичный сервис для получения иконок сайтов
+- **Что отправляется:** только домен (например, `github.com`)
+- **Лицензия:** публичный сервис
+
+---
+
+## Иконки и ресурсы
+
+Все иконки приложения (`build/icon.svg`, `build/icon.png`, `build/icon.icns`,
+`build/icon.ico`, `build/icons/`) созданы автором проекта и распространяются
+под той же лицензией MIT, что и основной код.
+
+SVG-иконки в интерфейсе (кнопки тулбара, вкладки, меню) — нарисованы
+вручную в стиле Feather/Lucide, свободны от лицензионных ограничений.
+
+---
+
+## Что НЕ используется
+
+Проект **сознательно не использует**:
+
+- **Шрифты** с закрытыми лицензиями — везде системные шрифты (`-apple-system`,
+  `BlinkMacSystemFont`, `Segoe UI`, `Roboto`)
+- **Иконки** из платных наборов
+- **Проприетарные библиотеки** с ограничениями на коммерческое использование
+- **CDN-скрипты** — всё локально в бандле
+
+---
+
+## Совместимость лицензий
+
+Все используемые лицензии (MIT, Apache 2.0) являются **permissive** —
+они разрешают использование, модификацию и распространение кода, включая
+коммерческое, при условии сохранения копирайта и текста лицензии.
+
+**Конфликтов нет.** Проект под MIT может свободно включать зависимости
+под MIT и Apache 2.0.
+
+---
+
+## Что делать, если добавляешь новую зависимость
+
+1. Проверь её лицензию — должна быть **MIT, Apache 2.0, BSD или ISC**
+2. **Не используй** библиотеки под GPL, AGPL, SSPL — они несовместимы с MIT
+3. Добавь запись в этот файл: версия, лицензия, ссылка, для чего
+4. Если лицензия требует приложить полный текст — приложи
+5. Обнови соответствующий раздел в `docs/TECHNOLOGIES.md`
+
+---
+
+## См. также
+
+- [README](../README.md) — обзор проекта
+- [LICENSE](../LICENSE) — лицензия самого проекта
+- [TECHNOLOGIES](TECHNOLOGIES.md) — стек и API
