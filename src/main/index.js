@@ -23,6 +23,7 @@ app.commandLine.appendSwitch('webrtc-ip-handling-policy', 'default_public_interf
 
 const CHROME_HEIGHT_BASE = 80
 const CHROME_HEIGHT_BOOKMARKS = 112
+const OMNIBOX_DROPDOWN_MAX = 340
 const CHROME_ANIM_DURATION = 280
 const CHROME_ANIM_FRAME = 16
 
@@ -115,6 +116,8 @@ const pdfDataStore = new Map()
 const tabTrackerCounts = new Map()
 
 let currentChromeHeight = CHROME_HEIGHT_BASE
+let omniboxOpen = false
+let omniboxHeight = 0
 let chromeAnimTimer = null
 let isQuitting = false
 let isQuitHandled = false
@@ -984,6 +987,28 @@ function getTargetChromeHeight() {
   return bookmarksCache.length > 0 ? CHROME_HEIGHT_BOOKMARKS : CHROME_HEIGHT_BASE
 }
 
+function getEffectiveChromeHeight() {
+  const base = getTargetChromeHeight()
+  return omniboxOpen ? base + omniboxHeight : base
+}
+
+function setOmniboxOpen(open, height) {
+  const next = !!open
+  const nextHeight = next
+    ? Math.max(0, Math.min(Number(height) || 0, OMNIBOX_DROPDOWN_MAX))
+    : 0
+
+  if (next === omniboxOpen && nextHeight === omniboxHeight) return
+
+  omniboxOpen = next
+  omniboxHeight = nextHeight
+
+  // Без анимации — иначе дёргается при каждом нажатии клавиши
+  if (chromeAnimTimer) { clearTimeout(chromeAnimTimer); chromeAnimTimer = null }
+  currentChromeHeight = getEffectiveChromeHeight()
+  applyLayout(currentChromeHeight)
+}
+
 function makeBookmarkId(prefix) {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${prefix}`
 }
@@ -1408,7 +1433,7 @@ function animateChromeHeight(targetHeight) {
 }
 
 function updateChromeHeightForBookmarks() {
-  const target = getTargetChromeHeight()
+  const target = getEffectiveChromeHeight()
   if (Math.abs(target - currentChromeHeight) > 0.5) animateChromeHeight(target)
   else layoutViews()
 }
@@ -2319,7 +2344,7 @@ function createWindow() {
 
   createStatusBar()
 
-  currentChromeHeight = getTargetChromeHeight()
+  currentChromeHeight = getEffectiveChromeHeight()
   applyLayout(currentChromeHeight)
 
   mainWindow.on('resize', () => {
@@ -3042,6 +3067,10 @@ app.whenReady().then(() => {
     chromeView.webContents.send('scroll-state', !!isScrolled)
   })
 
+  ipcMain.on('omnibox-open', (_e, payload) => {
+    setOmniboxOpen(payload?.open, payload?.height)
+  })
+
   ipcMain.on('drop-files', (_e, paths) => {
     handleDropFiles(paths)
   })
@@ -3693,6 +3722,8 @@ app.whenReady().then(() => {
     menu.popup({ window: win || mainWindow })
   })
 
+  ipcMain.handle('get-history', () => historyCache)
+
   ipcMain.handle('remove-history-entry', (_e, id) => {
     const idx = historyCache.findIndex(h => h.id === id)
     if (idx >= 0) { historyCache.splice(idx, 1); saveHistory(); broadcastHistory() }
@@ -3952,7 +3983,7 @@ app.whenReady().then(() => {
 
     return results
   })
-
+  ipcMain.handle('get-suggestions', (_e, query) => fetchSuggestions(query))
 })
 
 // ============================================================

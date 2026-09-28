@@ -184,4 +184,10 @@ window.browserAPI.onHistoryExportResult((res) => {
   }
 })
 
+// Первичная загрузка истории (без неё страница открывалась пустой до первого события history-updated)
+window.browserAPI.getHistory().then((list) => {
+  allHistory = list || []
+  render()
+})
+
 // Тема и акцент: см. shared/theme.js

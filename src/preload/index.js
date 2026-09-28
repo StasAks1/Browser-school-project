@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
   createPrivateTab: () => ipcRenderer.invoke('tab-create-private'),
   closeAllPrivateTabs: () => ipcRenderer.invoke('close-all-private-tabs'),
   closeTab: (id) => ipcRenderer.invoke('tab-close', id),
+  setOmniboxOpen: (open, height) => ipcRenderer.send('omnibox-open', { open: !!open, height: Number(height) || 0 }),
   switchTab: (id) => ipcRenderer.invoke('tab-switch', id),
   restoreClosedTab: () => ipcRenderer.invoke('tab-restore-closed'),
   duplicateTab: (id) => ipcRenderer.invoke('tab-duplicate', id),

@@ -694,9 +694,15 @@ window.browserAPI.onShortcutBookmark(() => {
 // ============ Omnibox dropdown ==============================
 // ============================================================
 function hideOmniboxDropdown() {
+  if (!omniboxDropdown.classList.contains('visible')) {
+    omniboxResults = []
+    omniboxSelectedIndex = -1
+    return
+  }
   omniboxDropdown.classList.remove('visible')
   omniboxResults = []
   omniboxSelectedIndex = -1
+  window.browserAPI.setOmniboxOpen(false, 0)
 }
 
 async function searchOmnibox(query) {
@@ -741,6 +747,13 @@ function renderOmniboxDropdown() {
       window.browserAPI.navigate(url)
       input.blur()
     })
+  })
+
+  // Просим main расширить chromeView до фактической высоты dropdown’а.
+  // requestAnimationFrame — чтобы scrollHeight посчитался после вставки DOM.
+  requestAnimationFrame(() => {
+    const h = Math.min(omniboxDropdown.scrollHeight, 340)
+    window.browserAPI.setOmniboxOpen(true, h)
   })
 }
 
