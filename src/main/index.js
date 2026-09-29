@@ -1,6 +1,4 @@
 import { app, BrowserWindow, WebContentsView, ipcMain, net, Menu, clipboard, screen, nativeTheme, dialog, shell } from 'electron'
-import { session as electronSession } from 'electron'
-import { installChromeWebStore, installExtension, updateExtensions } from 'electron-chrome-web-store'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -14,6 +12,7 @@ import { showTabContextMenu } from './context-menu.js'
 import { getPrivateSession, clearPrivateData, PRIVATE_BG_COLOR } from './private.js'
 import { extractArticle } from './reader.js'
 import { attachTrackerBlocker, getStats as getTrackerStats, resetStats as resetTrackerStats, getCategories as getTrackerCategories } from './tracker-blocker.js'
+import { installExtensionFromStore, removeExtensionFromSession, listInstalledExtensions, loadInstalledExtensions } from './extension-installer.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -1439,6 +1438,7 @@ function updateStatusBar(url) {
 function hideStatusBar() {
   updateStatusBar('')
 }
+
 // ============================================================
 // ============ LAYOUT ========================================
 // ============================================================
@@ -2350,22 +2350,17 @@ function openBookmarkPopup({ rect, bookmarkId, title, url }) {
 // ============================================================
 // ============ ОКНО ==========================================
 // ============================================================
-async function createWindow() {
+function createWindow() {
   const isMac = process.platform === 'darwin'
   const isWin = process.platform === 'win32'
 
-  // ============ Chrome Web Store ============
-  // Установщик расширений (MIT-лицензия)
-  try {
-    const extensionsPath = path.join(app.getPath('userData'), 'Extensions')
-    await installChromeWebStore({
-      session: electronSession.defaultSession,
-      extensionsPath,
-    })
-    debugLog('Extensions', 'Chrome Web Store инициализирован')
-  } catch (err) {
-    debugLog('Extensions', `Ошибка инициализации: ${err.message}`)
-  }
+  // ============ Расширения ============
+  // Загружаем ранее установленные расширения в фоне,
+  // чтобы не блокировать создание окна и регистрацию IPC
+  const extensionsDir = path.join(app.getPath('userData'), 'Extensions')
+  loadInstalledExtensions(extensionsDir).catch((err) => {
+    debugLog('Extensions', `Ошибка автозагрузки: ${err.message}`)
+  })
 
   const themeColor = getBackgroundColor()
   const symbolColor = getResolvedTheme() === 'light' ? '#1a1a1a' : '#f0f0f0'
@@ -4110,58 +4105,20 @@ app.whenReady().then(() => {
   ipcMain.handle('get-suggestions', (_e, query) => fetchSuggestions(query))
 
   // ============ Расширения Chrome ============
-  ipcMain.handle('extensions-list', () => {
-    try {
-      const list = electronSession.defaultSession.getAllExtensions()
-      return list.map(ext => ({
-        id: ext.id,
-        name: ext.name,
-        version: ext.version,
-        description: ext.manifest?.description || '',
-        path: ext.path,
-      }))
-    } catch (err) {
-      debugLog('Extensions', `Ошибка получения списка: ${err.message}`)
-      return []
-    }
-  })
+  ipcMain.handle('extensions-list', () => listInstalledExtensions())
 
   ipcMain.handle('extensions-install', async (_e, extensionId) => {
-    if (!extensionId || typeof extensionId !== 'string') {
-      return { ok: false, error: 'Некорректный ID расширения' }
-    }
-    try {
-      const existing = electronSession.defaultSession.getAllExtensions().find(e => e.id === extensionId)
-      if (existing) {
-        return { ok: false, error: 'Расширение уже установлено' }
-      }
-      await installExtension(extensionId, { session: electronSession.defaultSession })
-      debugLog('Extensions', `Установлено: ${extensionId}`)
-      return { ok: true }
-    } catch (err) {
-      debugLog('Extensions', `Ошибка установки: ${err.message}`)
-      return { ok: false, error: err.message || 'Не удалось установить расширение' }
-    }
+    const extensionsDir = path.join(app.getPath('userData'), 'Extensions')
+    return await installExtensionFromStore(extensionId, extensionsDir)
   })
 
   ipcMain.handle('extensions-remove', async (_e, extensionId) => {
     if (!extensionId) return { ok: false, error: 'Не указан ID' }
-    try {
-      await electronSession.defaultSession.removeExtension(extensionId)
-      debugLog('Extensions', `Удалено: ${extensionId}`)
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, error: err.message }
-    }
+    return await removeExtensionFromSession(extensionId)
   })
 
   ipcMain.handle('extensions-update', async () => {
-    try {
-      await updateExtensions({ session: electronSession.defaultSession })
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, error: err.message }
-    }
+    return { ok: true, message: 'Обновление не требуется для ручной установки' }
   })
 
 })
@@ -4193,5 +4150,3 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
-
-/* эта строка создана только для красивого коммита 10 обновления на гитхаб, чисто эстетика, не судите строго */

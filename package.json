@@ -18,8 +18,8 @@
     "dist:linux": "electron-vite build && electron-builder --linux --publish never"
   },
   "dependencies": {
+    "@electron-internal/extract-zip": "^1.0.5",
     "@mozilla/readability": "^0.6.0",
-    "electron-chrome-web-store": "^0.7.0",
     "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {

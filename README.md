@@ -66,7 +66,8 @@
 
 **Расширения Chrome**
 - Установка расширений из официального **Chrome Web Store**
-- Страница управления `internal://extensions` — установка по ID, удаление, обновление
+- **Собственный загрузчик** (`extension-installer.js`) на безопасном `@electron-internal/extract-zip`
+- Страница управления `internal://extensions` — установка по ID, удаление, автозагрузка
 - Поддержка **Manifest V3** (например, uBlock Origin Lite)
 - ⚠️ Из-за ограничений Electron работают не все расширения — подробности в [docs/PRIVACY.md](docs/PRIVACY.md)
 
@@ -81,6 +82,7 @@
 - **Гарантированная очистка приватной сессии** при выходе (двойная)
 - **Ограничение размера кэша Chromium** до 100 МБ + кнопка ручной очистки
 - CSP во всех внутренних HTML
+- **0 уязвимостей в `npm audit`** — все зависимости проверены
 
 **Настройки**
 - Тема (light / dark / system), 6 акцентных цветов
@@ -114,7 +116,7 @@
 - **HTML + CSS** без фреймворков
 - **@mozilla/readability** — движок Reader Mode
 - **pdfjs-dist** — движок PDF-viewer
-- **electron-chrome-web-store** — установка расширений Chrome
+- **@electron-internal/extract-zip** — безопасная распаковка `.crx` расширений
 
 Подробнее о технологиях и зависимостях — см. [docs/TECHNOLOGIES.md](docs/TECHNOLOGIES.md).
 

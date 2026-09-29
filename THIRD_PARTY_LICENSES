@@ -86,35 +86,39 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### electron-chrome-web-store
+### @electron-internal/extract-zip
 
-- **Версия:** 0.7.x
-- **Лицензия:** MIT
-- **Репозиторий:** https://github.com/samuelmaddock/electron-browser-shell
-- **Для чего:** установка расширений Chrome из официального Chrome Web Store
+- **Версия:** 1.0.x
+- **Лицензия:** BSD-2-Clause
+- **Репозиторий:** https://github.com/electron-internal/extract-zip
+- **Для чего:** безопасная распаковка `.crx`-файлов расширений Chrome при установке
+
+**Почему выбран этот форк:** официальный пакет `extract-zip@2.0.1` содержит две уязвимости high-severity (symlink traversal). `@electron-internal/extract-zip` — форк от команды Electron, устойчивый к симлинк-атакам, absolute paths, zip-бомбам. Используется внутри самого Electron для распаковки ресурсов.
 
 ```
-MIT License
+Copyright (c) 2014 Max Ogden and other contributors
 
-Copyright (c) Samuel Maddock
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
 ```
 
 ---
@@ -166,7 +170,7 @@ SOFTWARE.
 ### Chrome Web Store
 
 - **URL:** https://clients2.google.com/service/update2/crx
-- **Использование:** публичный сервис для установки расширений Chrome
+- **Использование:** публичный сервис для скачивания `.crx`-файлов расширений
 - **Что отправляется:** ID расширения, IP-адрес, User-Agent, стандартные HTTP-заголовки
 - **Особенность:** запрос идёт напрямую от браузера к серверам Google; разработчик браузера к нему доступа не имеет
 
@@ -178,6 +182,7 @@ SOFTWARE.
 и распространяются под лицензией MIT (см. [LICENSE](LICENSE)):
 
 - **Движок блокировки рекламы и трекеров** (`src/main/tracker-list.js`, `src/main/tracker-blocker.js`) — 2 уровня фильтрации: домены + URL-паттерны, ~500 доменов в 6 категориях
+- **Загрузчик расширений Chrome** (`src/main/extension-installer.js`) — собственная реализация: скачивание `.crx`, отрезание CRX-заголовка, распаковка через `@electron-internal/extract-zip`, загрузка в сессию
 - **Reader Mode UI** — собственный интерфейс поверх `@mozilla/readability`
 - **PDF-viewer UI** — собственный интерфейс поверх `pdfjs-dist`
 - **Chrome UI** — весь интерфейс браузера с нуля
@@ -197,22 +202,21 @@ SOFTWARE.
 - **CDN-скрипты** — всё локально в бандле
 - **Готовые блокировщики рекламы** (uBlock, AdBlock) — реализован свой движок
 - **Динамические списки трекеров** — все правила статические, не загружаются из интернета
+- **`electron-chrome-extensions`** (GPL-3.0) — несовместимо с MIT
+- **`electron-chrome-web-store`** и форки — тянут транзитивно уязвимый `adm-zip@0.5.18`
+- **`extract-zip@2.0.1`** — содержит symlink traversal уязвимости
+- **`adm-zip`** — все версии до 0.6.1 уязвимы (DoS, path traversal)
 
 ---
 
 ## Совместимость лицензий
 
-Все используемые лицензии (MIT, Apache 2.0) являются **permissive** —
+Все используемые лицензии (MIT, Apache 2.0, BSD-2-Clause) являются **permissive** —
 они разрешают использование, модификацию и распространение кода, включая
 коммерческое, при условии сохранения копирайта и текста лицензии.
 
 **Конфликтов нет.** Проект под MIT может свободно включать зависимости
-под MIT и Apache 2.0.
-
-**Отдельно:** библиотека `electron-chrome-extensions` (GPL-3.0) **сознательно
-не используется** в проекте — её GPL-лицензия несовместима с MIT. Вместо неё
-используется только `electron-chrome-web-store` (MIT), который покрывает
-базовую функциональность установки расширений.
+под MIT, Apache 2.0 и BSD.
 
 ---
 
@@ -220,9 +224,10 @@ SOFTWARE.
 
 1. Проверь её лицензию — должна быть **MIT, Apache 2.0, BSD или ISC**
 2. **Не используй** библиотеки под GPL, AGPL, SSPL — они несовместимы с MIT
-3. Добавь запись в этот файл: версия, лицензия, ссылка, для чего
-4. Если лицензия требует приложить полный текст — приложи
-5. Обнови соответствующий раздел в `docs/TECHNOLOGIES.md`
+3. Проверь `npm audit` — не должно быть уязвимостей уровня high и выше
+4. Добавь запись в этот файл: версия, лицензия, ссылка, для чего
+5. Если лицензия требует приложить полный текст — приложи
+6. Обнови соответствующий раздел в `docs/TECHNOLOGIES.md`
 
 ---
 

@@ -29,6 +29,9 @@
 | `WebContentsView` | Вкладки, chrome UI, status bar | Современная замена `<webview>` |
 | `BrowserWindow` | Главное окно, попап закладки, диалог разрешений | |
 | `session.fromPartition` | Приватный режим | Отдельная сессия Chromium |
+| `session.loadExtension` | Загрузка установленных расширений | |
+| `session.getAllExtensions` | Список установленных расширений | |
+| `session.removeExtension` | Удаление расширения | |
 | `session.getCacheSize` / `clearCache` | Настройки → Приватность | Размер и очистка кэша |
 | `ipcMain` / `ipcRenderer` | Связь main ↔ renderer | |
 | `contextBridge` | Безопасный API для renderer | |
@@ -43,12 +46,16 @@
 
 ## Расширения Chrome
 
-### electron-chrome-web-store
-Библиотека для установки расширений из официального Chrome Web Store.
+### Собственный загрузчик
 
-- **Используется в:** `src/main/index.js` → `createWindow()`, IPC-хендлеры `extensions-*`
-- **Для чего:** скачивание `.crx`, распаковка, установка в сессию Chromium
-- **Лицензия:** MIT
+Установка расширений реализована **с нуля** в `src/main/extension-installer.js`. Готовые библиотеки (`electron-chrome-web-store` и его форки) не используются — они тянут транзитивно уязвимый `adm-zip@0.5.18`.
+
+**Алгоритм:**
+1. Скачиваем `.crx` с `clients2.google.com` через Node.js `https`
+2. Отрезаем CRX2/CRX3-заголовок — ищем ZIP-сигнатуру `PK\x03\x04` и берём всё начиная с неё
+3. Распаковываем через **`@electron-internal/extract-zip`** (безопасный форк от Electron, BSD-2-Clause)
+4. Загружаем распакованную папку через `session.loadExtension()`
+5. При следующем запуске — все установленные расширения автоматически подгружаются через `loadInstalledExtensions()`
 
 ### Ограничения Electron Extension API
 
@@ -56,19 +63,21 @@ Electron поддерживает **только подмножество** Chro
 
 **Работает:**
 - `chrome.runtime` (частично)
-- `chrome.storage`
+- `chrome.storage.local`
 - `content_scripts`
 - `declarativeNetRequest` (Manifest V3)
+- `chrome.scripting`
 - DevTools-related API
 
 **НЕ работает:**
-- `chrome.tabs` — управление вкладками
+- `chrome.tabs` (полный API — `onCreated`, `onRemoved`, `onUpdated`)
 - `chrome.webRequest` (блокирующий)
 - `chrome.action` — кнопки на панели
 - `chrome.windows`
+- `chrome.storage.sync` (синхронизация с аккаунтом Google)
 - Многие Manifest V2 API
 
-Из-за этого работают **простые расширения** (uBlock Origin Lite, Dark Mode для сайтов), но не работают **сложные** (классический uBlock Origin, расширения, управляющие вкладками).
+Из-за этого работают **простые расширения** (uBlock Origin Lite, Dark Mode для сайтов), но не работают **сложные** (классический uBlock Origin на MV2, расширения, управляющие вкладками).
 
 Подробнее — в [docs/PRIVACY.md](PRIVACY.md) и [docs/ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -146,7 +155,7 @@ Electron поддерживает **только подмножество** Chro
 | electron-builder | 26.x | MIT | Упаковщик |
 | @mozilla/readability | 0.6.x | Apache 2.0 | Reader Mode |
 | pdfjs-dist | 4.x | Apache 2.0 | PDF-viewer |
-| electron-chrome-web-store | 0.7.x | MIT | Установка расширений Chrome |
+| @electron-internal/extract-zip | 1.0.x | BSD-2-Clause | Распаковка `.crx` расширений Chrome |
 | GitHub Actions | — | бесплатно | CI/CD |
 
 ## Публичные API
@@ -163,7 +172,7 @@ Electron поддерживает **только подмножество** Chro
 
 ### Chrome Web Store
 - **URL:** `https://clients2.google.com/service/update2/crx`
-- **Когда:** установка или обновление расширения пользователем
+- **Когда:** установка расширения пользователем (по ID)
 - **Что отправляется:** ID расширения, IP-адрес, User-Agent, стандартные HTTP-заголовки
 - **Особенность:** запрос идёт **напрямую** от браузера к серверам Google; разработчик браузера к нему доступа не имеет
 
@@ -179,7 +188,10 @@ Electron поддерживает **только подмножество** Chro
 | **Redux / MobX** | Состояние вкладок в main-процессе |
 | **Динамические списки трекеров** | Осознанный отказ по 152-ФЗ |
 | **Готовые блокировщики (uBlock, AdBlock)** | Своя реализация чище и без внешних запросов |
-| **electron-chrome-extensions** | GPL-лицензия — несовместимо с MIT проекта |
+| **electron-chrome-extensions** | GPL-3.0 — несовместимо с MIT |
+| **electron-chrome-web-store и форки** | Тянут уязвимый `adm-zip@0.5.18` |
+| **extract-zip@2.0.1** | Symlink traversal уязвимости |
+| **adm-zip** | Все версии до 0.6.1 уязвимы (DoS, path traversal) |
 
 ---
 

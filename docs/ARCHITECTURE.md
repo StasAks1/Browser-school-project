@@ -12,7 +12,7 @@ Electron состоит из трёх независимых контексто�
 │  ─ файлы, IPC, сеть                              │
 │  ─ безопасность, HTTPS-only, Referrer, WebRTC    │
 │  ─ блокировка рекламы и трекеров                 │
-│  ─ установка расширений Chrome                   │
+│  ─ собственный загрузчик расширений Chrome       │
 │  ─ Menu, dialog, session, webUtils               │
 │                                                  │
 └────────────────────┬─────────────────────────────┘
@@ -297,37 +297,37 @@ IPC `show-history-export-menu` → нативное контекстное ме�
 
 ## Расширения Chrome
 
-Поддержка расширений реализована через библиотеку **`electron-chrome-web-store`** (MIT).
+Установка расширений реализована **с нуля** в `src/main/extension-installer.js`. Готовые библиотеки (`electron-chrome-web-store` и его форки) не используются — они тянут транзитивно уязвимый `adm-zip@0.5.18`.
 
 ### Как работает
 
 1. Пользователь вводит ID расширения (32-символьный код) на странице `internal://extensions`
-2. Main-процесс вызывает `installExtension()` из библиотеки
-3. Библиотека скачивает `.crx` с Chrome Web Store и распаковывает в `userData/Extensions/<id>/`
-4. Electron загружает расширение в основную сессию (`session.defaultSession`)
-5. Расширение работает в Chromium согласно своему Manifest
+2. Main-процесс вызывает `installExtensionFromStore(id, extensionsDir)`
+3. **Шаг 1 — скачивание `.crx`:** Node.js `https.get` с ручным follow редиректов. Параметры запроса расширенные (os, arch, prodversion), потому что Chrome Web Store проверяет их и возвращает пустой файл при «бедном» запросе.
+4. **Шаг 2 — отрезание CRX-заголовка:** `.crx` — это ZIP с бинарным заголовком в начале. Ищем ZIP-сигнатуру `PK\x03\x04` и берём всё начиная с неё.
+5. **Шаг 3 — распаковка:** через **`@electron-internal/extract-zip`** — форк от команды Electron, устойчивый к symlink traversal, absolute paths, zip-бомбам (BSD-2-Clause).
+6. **Шаг 4 — загрузка:** `session.loadExtension(targetDir, { allowFileAccess: true })`.
+7. **Автозагрузка при старте:** `loadInstalledExtensions()` сканирует `userData/Extensions/`, находит папки с `manifest.json` и загружает каждую.
+
+### IPC-методы
+
+- `extensions-list` — список установленных (из `session.getAllExtensions()`)
+- `extensions-install(id)` — установить по ID
+- `extensions-remove(id)` — удалить (`session.removeExtension()`)
+- `extensions-update()` — заглушка (обновление вручную переустановкой)
 
 ### Ограничения Electron
 
 Electron поддерживает **подмножество** Chrome Extension API:
-- ✅ `content_scripts`, `declarativeNetRequest`, `chrome.storage`, `chrome.runtime`
-- ❌ `chrome.tabs`, `chrome.webRequest` (блокирующий), `chrome.action`
+- ✅ `content_scripts`, `declarativeNetRequest`, `chrome.storage.local`, `chrome.runtime`, `chrome.scripting`
+- ❌ `chrome.tabs`, `chrome.webRequest` (блокирующий), `chrome.action`, `chrome.windows`, `chrome.storage.sync`
 
 Из-за этого **простые расширения работают** (uBlock Origin Lite), а сложные — нет (классический uBlock Origin).
-
-При попытке загрузить несовместимое расширение Electron выдаст ошибку в консоли (например, `chrome.tabs is undefined`).
-
-### IPC-методы
-
-- `extensions-list` — список установленных
-- `extensions-install(id)` — установить по ID
-- `extensions-remove(id)` — удалить
-- `extensions-update()` — проверить обновления всех
 
 ### Хранение
 
 - Файлы расширений: `userData/Extensions/<extension-id>/`
-- Данные расширения (`chrome.storage`): в изолированной сессии Chromium там же, в `userData`
+- Данные расширения (`chrome.storage.local`): в изолированной сессии Chromium там же, в `userData`
 - Ничего из этого **не передаётся разработчику**
 
 ### Удаление
@@ -376,7 +376,7 @@ Electron поддерживает **подмножество** Chrome Extension 
 | `downloads.json` | Список загрузок | main |
 | `settings.json` | Настройки (тулбар, homepage, customTheme, блокировка) | main |
 | `session.json` | Открытые вкладки | main |
-| `Extensions/` | Установленные расширения Chrome | electron-chrome-web-store |
+| `Extensions/` | Установленные расширения Chrome | `extension-installer.js` |
 
 ### RAM-only данные (никогда на диск)
 
@@ -408,6 +408,7 @@ Electron поддерживает **подмножество** Chrome Extension 
 | `bookmarks-io.js` | Импорт/экспорт HTML |
 | `tracker-list.js` | Список трекеров + URL-паттернов по категориям |
 | `tracker-blocker.js` | Движок блокировки (домены + URL) |
+| `extension-installer.js` | Установка расширений Chrome (свой загрузчик) |
 | `debug.js` | Логи |
 
 ## Поток данных при клике на ссылку
@@ -459,15 +460,25 @@ Electron поддерживает **подмножество** Chrome Extension 
 1. Пользователь открывает internal://extensions
 2. Вводит ID расширения (32 символа)
 3. Renderer вызывает IPC extensions-install(id)
-4. Main проверяет, не установлено ли уже
-5. Вызывает installExtension() из electron-chrome-web-store
-6. Библиотека:
-   - Скачивает .crx с Chrome Web Store
-   - Проверяет подпись
-   - Распаковывает в userData/Extensions/<id>/
-7. Electron загружает расширение в session.defaultSession
-8. Расширение активируется (запускается его service worker, content scripts)
-9. Renderer обновляет список установленных
+4. Main вызывает installExtensionFromStore(id, extensionsDir)
+5. Проверка: не установлено ли уже
+6. Скачивание .crx через Node.js https с ручным follow редиректов
+7. Отрезание CRX-заголовка (поиск ZIP-сигнатуры PK\x03\x04)
+8. Распаковка через @electron-internal/extract-zip
+9. Проверка наличия manifest.json
+10. session.loadExtension(targetDir, { allowFileAccess: true })
+11. Расширение активируется (service worker, content scripts)
+12. Renderer обновляет список установленных
+```
+
+## Поток при автозагрузке расширений
+
+```
+1. При старте приложения createWindow() вызывает loadInstalledExtensions()
+2. Функция читает userData/Extensions/
+3. Для каждой подпапки проверяет наличие manifest.json
+4. Если есть — session.loadExtension(path)
+5. Логирует успех или ошибку для каждого расширения
 ```
 
 ## Безопасность
@@ -484,6 +495,7 @@ Electron поддерживает **подмножество** Chrome Extension 
 - **Блокировка рекламы и трекеров** через `webRequest` (2 уровня)
 - **Ограничение кэша** до 100 МБ + ручная очистка
 - **Гарантированная очистка приватной сессии** при выходе (`before-quit` с `await clearPrivateData()`)
+- **Безопасная распаковка `.crx`** — `@electron-internal/extract-zip` устойчив к symlink traversal и zip-бомбам
 
 ---
 
