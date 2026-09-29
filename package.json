@@ -1,5 +1,5 @@
 {
-  "name": "browser-project",
+  "name": "malina-browser",
   "version": "1.0.0",
   "description": "Кроссплатформенный браузер на Electron — итоговый проект по информатике",
   "author": {
@@ -8,7 +8,6 @@
   },
   "license": "MIT",
   "main": "out/main/index.js",
-  "desktopName": "com.stasaks1.browserproject",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -20,6 +19,7 @@
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
+    "electron-chrome-web-store": "^0.7.0",
     "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
@@ -28,8 +28,8 @@
     "electron-vite": "^5.0.0"
   },
   "build": {
-    "appId": "com.stasaks1.browserproject",
-    "productName": "Browser Project",
+    "appId": "com.stasaks1.malinabrowser",
+    "productName": "Malina Browser",
     "copyright": "Copyright © 2026 StasAks1",
     "directories": {
       "output": "dist",
@@ -40,6 +40,7 @@
       "!out/**/*.map",
       "!**/*.md",
       "!**/*.txt",
+      "LICENSE",
       "!**/node_modules/**/{test,__tests__,tests,powered-test,example,examples}/**"
     ],
     "asar": true,
@@ -72,7 +73,7 @@
       }
     },
     "dmg": {
-      "title": "Browser Project ${version}",
+      "title": "Malina Browser ${version}",
       "contents": [
         {
           "x": 130,
@@ -109,15 +110,14 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Browser Project",
-      "uninstallDisplayName": "Browser Project",
+      "shortcutName": "Malina Browser",
+      "uninstallDisplayName": "Malina Browser",
       "deleteAppDataOnUninstall": false
     },
     "linux": {
       "icon": "build/icons",
       "category": "Network",
-      "maintainer": "StasAks1 <noreply@browser-project.local>",
-      "syncDesktopName": true,
+      "maintainer": "StasAks1 <noreply@malina-browser.local>",
       "target": [
         {
           "target": "AppImage",

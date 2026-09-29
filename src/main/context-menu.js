@@ -3,7 +3,7 @@
  * Строит меню в зависимости от того, куда пользователь кликнул правой кнопкой:
  * по ссылке, картинке, тексту, редактируемому полю или пустому месту.
  */
-import { Menu, clipboard, app, dialog } from 'electron'
+import { Menu, clipboard, app, dialog, BrowserWindow } from 'electron'
 import path from 'path'
 import { debugLog } from './debug.js'
 
@@ -198,5 +198,7 @@ export function showTabContextMenu({ params, wc, actions }) {
   if (template.length === 0) return
 
   const menu = Menu.buildFromTemplate(template)
-  menu.popup()
+  const win = BrowserWindow.fromWebContents(wc)
+  menu.popup({ window: win || undefined })
 }
+/* эта строка создана только для красивого коммита 10 обновления на гитхаб, чисто эстетика, не судите строго */

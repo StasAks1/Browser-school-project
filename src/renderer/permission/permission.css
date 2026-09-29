@@ -137,3 +137,5 @@ html, body {
 
 .btn-primary { background: var(--accent); color: #fff; }
 .btn-primary:hover { background: var(--accent-hover); }
+
+/* эта строка создана только для красивого коммита 10 обновления на гитхаб, чисто эстетика, не судите строго */

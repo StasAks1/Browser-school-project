@@ -11,7 +11,7 @@ function safeCall(fn) {
 
 export function buildApplicationMenu(actions, opts = {}) {
   const isMac = process.platform === 'darwin'
-  const appName = opts.appName || app.getName() || 'Browser Project'
+  const appName = opts.appName || app.getName() || 'Malina Browser'
 
   const template = []
 
@@ -347,7 +347,7 @@ export function buildApplicationMenu(actions, opts = {}) {
 
 export function setupApplicationMenu(actions, opts = {}) {
   const isMac = process.platform === 'darwin'
-  const appName = opts.appName || app.getName() || 'Browser Project'
+  const appName = opts.appName || app.getName() || 'Malina Browser'
 
   if (isMac && typeof app.setAboutPanelOptions === 'function') {
     try {
@@ -367,3 +367,5 @@ export function setupApplicationMenu(actions, opts = {}) {
   Menu.setApplicationMenu(menu)
   return menu
 }
+
+/* эта строка создана только для красивого коммита 10 обновления на гитхаб, чисто эстетика, не судите строго */

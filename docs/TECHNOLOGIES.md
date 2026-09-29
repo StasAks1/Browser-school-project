@@ -41,12 +41,69 @@
 | `session.cookies` | Cookie-менеджер | |
 | `nativeTheme` | Системная тема | |
 
+## Расширения Chrome
+
+### electron-chrome-web-store
+Библиотека для установки расширений из официального Chrome Web Store.
+
+- **Используется в:** `src/main/index.js` → `createWindow()`, IPC-хендлеры `extensions-*`
+- **Для чего:** скачивание `.crx`, распаковка, установка в сессию Chromium
+- **Лицензия:** MIT
+
+### Ограничения Electron Extension API
+
+Electron поддерживает **только подмножество** Chrome Extension API:
+
+**Работает:**
+- `chrome.runtime` (частично)
+- `chrome.storage`
+- `content_scripts`
+- `declarativeNetRequest` (Manifest V3)
+- DevTools-related API
+
+**НЕ работает:**
+- `chrome.tabs` — управление вкладками
+- `chrome.webRequest` (блокирующий)
+- `chrome.action` — кнопки на панели
+- `chrome.windows`
+- Многие Manifest V2 API
+
+Из-за этого работают **простые расширения** (uBlock Origin Lite, Dark Mode для сайтов), но не работают **сложные** (классический uBlock Origin, расширения, управляющие вкладками).
+
+Подробнее — в [docs/PRIVACY.md](PRIVACY.md) и [docs/ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Блокировка рекламы и трекеров
+
+### Собственный движок
+
+Не использует библиотек — реализован с нуля на `session.webRequest.onBeforeRequest`.
+
+**Два уровня:**
+1. **Домены** — ~500 доменов в 6 категориях (`src/main/tracker-list.js`)
+2. **URL-паттерны** — 28 сегментов пути (`AD_PATH_SEGMENTS`)
+
+**Категории:**
+- `ads` — реклама
+- `analytics` — аналитика
+- `social` — соцсети
+- `marketing` — marketing и affiliate
+- `fingerprint` — anti-fraud и fingerprint
+- `cryptominers` — криптомайнеры
+
+Каждая категория включается/выключается отдельно через `settingsCache.trackerCategories`.
+
+**Почему свой, а не готовая библиотека:**
+- Не требует внешних запросов (важно для 152-ФЗ)
+- Полный контроль над списком
+- Никаких зависимостей
+- Пользователь видит и контролирует все правила
+
 ## Безопасность и приватность в API
 
 | Техника | Где | Зачем |
 |---|---|---|
 | `webRequest.onBeforeRequest({ urls: ['data:*'] })` | main | Блокировка `data:` в mainFrame |
-| `webRequest.onBeforeRequest` | tracker-blocker.js | Блокировка трекеров + счётчик |
+| `webRequest.onBeforeRequest` | tracker-blocker.js | Блокировка рекламы и трекеров (2 уровня) |
 | `webRequest.onBeforeSendHeaders` | main | Обрезка `Referer` до origin |
 | `app.commandLine.appendSwitch('disk-cache-size', ...)` | main | Ограничение кэша до 100 МБ |
 | `app.commandLine.appendSwitch('webrtc-ip-handling-policy', ...)` | main | Защита от WebRTC IP leak |
@@ -89,6 +146,7 @@
 | electron-builder | 26.x | MIT | Упаковщик |
 | @mozilla/readability | 0.6.x | Apache 2.0 | Reader Mode |
 | pdfjs-dist | 4.x | Apache 2.0 | PDF-viewer |
+| electron-chrome-web-store | 0.7.x | MIT | Установка расширений Chrome |
 | GitHub Actions | — | бесплатно | CI/CD |
 
 ## Публичные API
@@ -103,6 +161,12 @@
 - **Когда:** показ закладки, истории, ярлыка
 - **Что отправляется:** только домен сайта
 
+### Chrome Web Store
+- **URL:** `https://clients2.google.com/service/update2/crx`
+- **Когда:** установка или обновление расширения пользователем
+- **Что отправляется:** ID расширения, IP-адрес, User-Agent, стандартные HTTP-заголовки
+- **Особенность:** запрос идёт **напрямую** от браузера к серверам Google; разработчик браузера к нему доступа не имеет
+
 ## Что сознательно НЕ используется
 
 | Что | Почему нет |
@@ -114,6 +178,8 @@
 | **Tailwind CSS** | Свой CSS с переменными компактнее |
 | **Redux / MobX** | Состояние вкладок в main-процессе |
 | **Динамические списки трекеров** | Осознанный отказ по 152-ФЗ |
+| **Готовые блокировщики (uBlock, AdBlock)** | Своя реализация чище и без внешних запросов |
+| **electron-chrome-extensions** | GPL-лицензия — несовместимо с MIT проекта |
 
 ---
 

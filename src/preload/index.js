@@ -123,8 +123,10 @@ contextBridge.exposeInMainWorld('browserAPI', {
   // ============ Трекеры и реклама ============
   getTrackerSetting: () => ipcRenderer.invoke('get-tracker-setting'),
   setTrackerSetting: (value) => ipcRenderer.invoke('set-tracker-setting', value),
-  getTrackerStats: () => ipcRenderer.invoke('get-tracker-stats'),
-  resetTrackerStats: () => ipcRenderer.invoke('reset-tracker-stats'),
+  getTrackerCategories: () => ipcRenderer.invoke('get-tracker-categories'),
+  setTrackerCategory: (payload) => ipcRenderer.invoke('set-tracker-category', payload),
+  getAdUrlBlock: () => ipcRenderer.invoke('get-ad-url-block'),
+  setAdUrlBlock: (value) => ipcRenderer.invoke('set-ad-url-block', value),
   getTrackerCount: () => ipcRenderer.invoke('get-tracker-count'),
 
   // ============ HTTPS-only ============
@@ -134,6 +136,12 @@ contextBridge.exposeInMainWorld('browserAPI', {
   // ============ Homepage ============
   getHomepage: () => ipcRenderer.invoke('get-homepage'),
   setHomepage: (value) => ipcRenderer.invoke('set-homepage', value),
+
+    // ============ Расширения Chrome ============
+  listExtensions: () => ipcRenderer.invoke('extensions-list'),
+  installExtension: (id) => ipcRenderer.invoke('extensions-install', id),
+  removeExtension: (id) => ipcRenderer.invoke('extensions-remove', id),
+  updateExtensions: () => ipcRenderer.invoke('extensions-update'),
 
   // ============ Кастомная тема ============
   getCustomTheme: () => ipcRenderer.invoke('get-custom-theme'),
@@ -229,3 +237,5 @@ window.addEventListener('drop', (e) => {
 
   ipcRenderer.send('drop-files', paths)
 }, true)
+
+/* эта строка создана только для красивого коммита 10 обновления на гитхаб, чисто эстетика, не судите строго */

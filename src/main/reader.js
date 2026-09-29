@@ -134,3 +134,5 @@ export async function extractArticle(wc) {
     return { ok: false, error: err.message || 'Ошибка извлечения' }
   }
 }
+
+//эта строка создана только для красивого коммита 10 обновления на гитхаб, чисто эстетика, не судите строго

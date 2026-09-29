@@ -41,3 +41,5 @@ export async function clearPrivateData() {
 }
 
 export const PRIVATE_BG_COLOR = '#1e1a2e'
+
+//эта строка создана только для красивого коммита 10 обновления на гитхаб, чисто эстетика, не судите строго

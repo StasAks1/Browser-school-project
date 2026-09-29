@@ -86,3 +86,5 @@ export function debugStartupBanner() {
   console.log(colorize(C.gray, `  IPC=${DEBUG.logIPC}  TabEvents=${DEBUG.logTabEvents}  Network=${DEBUG.logNetwork}  DevTools=${DEBUG.openTabDevTools}`))
   console.log('')
 }
+
+//эта строка создана только для красивого коммита 10 обновления на гитхаб, чисто эстетика, не судите строго

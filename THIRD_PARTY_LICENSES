@@ -86,6 +86,37 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
+### electron-chrome-web-store
+
+- **Версия:** 0.7.x
+- **Лицензия:** MIT
+- **Репозиторий:** https://github.com/samuelmaddock/electron-browser-shell
+- **Для чего:** установка расширений Chrome из официального Chrome Web Store
+
+```
+MIT License
+
+Copyright (c) Samuel Maddock
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ---
 
 ## Зависимости для сборки (devDependencies)
@@ -132,16 +163,26 @@ limitations under the License.
 - **Что отправляется:** только домен (например, `github.com`)
 - **Лицензия:** публичный сервис
 
+### Chrome Web Store
+
+- **URL:** https://clients2.google.com/service/update2/crx
+- **Использование:** публичный сервис для установки расширений Chrome
+- **Что отправляется:** ID расширения, IP-адрес, User-Agent, стандартные HTTP-заголовки
+- **Особенность:** запрос идёт напрямую от браузера к серверам Google; разработчик браузера к нему доступа не имеет
+
 ---
 
-## Иконки и ресурсы
+## Собственные компоненты
 
-Все иконки приложения (`build/icon.svg`, `build/icon.png`, `build/icon.icns`,
-`build/icon.ico`, `build/icons/`) созданы автором проекта и распространяются
-под той же лицензией MIT, что и основной код.
+Следующие компоненты **не являются сторонними** — они реализованы автором проекта
+и распространяются под лицензией MIT (см. [LICENSE](LICENSE)):
 
-SVG-иконки в интерфейсе (кнопки тулбара, вкладки, меню) — нарисованы
-вручную в стиле Feather/Lucide, свободны от лицензионных ограничений.
+- **Движок блокировки рекламы и трекеров** (`src/main/tracker-list.js`, `src/main/tracker-blocker.js`) — 2 уровня фильтрации: домены + URL-паттерны, ~500 доменов в 6 категориях
+- **Reader Mode UI** — собственный интерфейс поверх `@mozilla/readability`
+- **PDF-viewer UI** — собственный интерфейс поверх `pdfjs-dist`
+- **Chrome UI** — весь интерфейс браузера с нуля
+- **Иконки приложения** (`build/icon.svg`, `build/icon.png`, `build/icon.icns`, `build/icon.ico`, `build/icons/`)
+- **SVG-иконки интерфейса** — нарисованы вручную в стиле Feather/Lucide
 
 ---
 
@@ -154,6 +195,8 @@ SVG-иконки в интерфейсе (кнопки тулбара, вкла�
 - **Иконки** из платных наборов
 - **Проприетарные библиотеки** с ограничениями на коммерческое использование
 - **CDN-скрипты** — всё локально в бандле
+- **Готовые блокировщики рекламы** (uBlock, AdBlock) — реализован свой движок
+- **Динамические списки трекеров** — все правила статические, не загружаются из интернета
 
 ---
 
@@ -165,6 +208,11 @@ SVG-иконки в интерфейсе (кнопки тулбара, вкла�
 
 **Конфликтов нет.** Проект под MIT может свободно включать зависимости
 под MIT и Apache 2.0.
+
+**Отдельно:** библиотека `electron-chrome-extensions` (GPL-3.0) **сознательно
+не используется** в проекте — её GPL-лицензия несовместима с MIT. Вместо неё
+используется только `electron-chrome-web-store` (MIT), который покрывает
+базовую функциональность установки расширений.
 
 ---
 
@@ -180,6 +228,6 @@ SVG-иконки в интерфейсе (кнопки тулбара, вкла�
 
 ## См. также
 
-- [README](../README.md) — обзор проекта
-- [LICENSE](../LICENSE) — лицензия самого проекта
-- [TECHNOLOGIES](TECHNOLOGIES.md) — стек и API
+- [README](README.md) — обзор проекта
+- [LICENSE](LICENSE) — лицензия самого проекта
+- [TECHNOLOGIES](docs/TECHNOLOGIES.md) — стек и API

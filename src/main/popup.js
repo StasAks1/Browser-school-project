@@ -106,7 +106,10 @@ export function buildPopupWindowOptions(details, parentWindow) {
   }
 
   // Фон — в цвет текущей темы, чтобы не мелькало белым
-  const bgColor = '#1a1a1a'
+  // Фон наследуется от родительского окна — чтобы не мелькало при открытии
+  const bgColor = (parentWindow && !parentWindow.isDestroyed())
+    ? parentWindow.getBackgroundColor()
+    : '#1a1a1a'
 
   return {
     width: w,
@@ -195,3 +198,5 @@ export function attachPopupHandlers(popupWin, createTab) {
 
   debugLog('Popup', `Открыт popup: ${wc.getURL() || 'about:blank'}`)
 }
+
+/* эта строка создана только для красивого коммита 10 обновления на гитхаб, чисто эстетика, не судите строго */

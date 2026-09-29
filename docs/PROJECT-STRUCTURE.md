@@ -3,7 +3,7 @@
 ## Дерево
 
 ```
-browser_school_project/
+malina_browser/
 ├── .github/                        GitHub Actions
 │   └── workflows/
 │       └── build.yml               CI: сборка под 3 платформы
@@ -36,8 +36,8 @@ browser_school_project/
 │   │   ├── private.js              Приватная сессия
 │   │   ├── session.js              Session restore
 │   │   ├── bookmarks-io.js         Импорт/экспорт HTML
-│   │   ├── tracker-list.js         Список трекеров (статический)
-│   │   ├── tracker-blocker.js      Блокировка
+│   │   ├── tracker-list.js         Список трекеров + URL-паттерны (6 категорий)
+│   │   ├── tracker-blocker.js      Движок блокировки (домены + URL)
 │   │   ├── debug.js                Логи
 │   │   └── debug.config.js         Флаги
 │   │
@@ -63,7 +63,8 @@ browser_school_project/
 │       ├── error/                  Error-страница
 │       ├── warning/                HTTP-warning
 │       ├── popup/                  Попап закладки
-│       └── permission/             Диалог разрешений
+│       ├── permission/             Диалог разрешений
+│       └── extensions/             Управление расширениями Chrome
 │
 ├── electron.vite.config.js
 ├── package.json
@@ -86,6 +87,8 @@ browser_school_project/
 - PDF-viewer — чтение файла и передача данных в renderer
 - Drag & drop вкладок (перестановка массива)
 - Bulk-операции с закладками
+- Собственный блокировщик рекламы: 2 уровня (домены + URL-паттерны), 6 категорий
+- Установка расширений Chrome через Chrome Web Store
 - Всё, что требует доступа к системе
 
 ### `src/preload/` — Preload-скрипт
@@ -97,6 +100,7 @@ browser_school_project/
 **Особые страницы:**
 - **`pdf/`** — PDF-viewer на `pdfjs-dist`, включает свой worker, ленивый рендер через `IntersectionObserver`, Retina-рендер (devicePixelRatio)
 - **`bookmarks/`** — кроме стандартного менеджера, поддерживает bulk-режим (выделение, массовое удаление, перемещение)
+- **`extensions/`** — управление расширениями Chrome: установка по ID, удаление, обновление, список с описаниями
 
 ### `build/` — Иконки
 Все форматы иконок приложения. **Коммитятся в репозиторий** (не в `.gitignore`). Используются electron-builder при сборке установщиков.
@@ -139,6 +143,23 @@ browser_school_project/
 3. IPC-методы `get-setting` / `set-setting`
 4. В `src/preload/index.js` — экспортировать
 5. В `src/renderer/settings/` — добавить UI
+
+### Новая категория блокировки трекеров
+1. В `src/main/tracker-list.js` — добавить в `TRACKER_CATEGORIES`:
+   ```js
+   newcategory: {
+     label: 'Название',
+     description: 'Что блокирует',
+     domains: ['example.com', ...],
+   },
+   ```
+2. В `src/main/index.js` — добавить ID в `TRACKER_CATEGORY_IDS`
+3. В `src/main/index.js` — добавить поле в `settingsCache.trackerCategories` (3 места)
+4. UI — появится автоматически, потому что настройки строятся из `getTrackerCategories()`
+
+### Новый URL-паттерн для блокировки рекламы
+1. В `src/main/tracker-list.js` — добавить слово в `AD_PATH_SEGMENTS`
+2. Всё, больше ничего не надо — блокировщик сам подхватит
 
 ### Новую кнопку тулбара
 1. Добавить `<button data-toolbar-id="my-id">` в `src/renderer/index/index.html`

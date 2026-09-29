@@ -49,7 +49,6 @@ Desktop.ini
 .npmrc
 .yarnrc
 .pnpm-store/
-.npm/
 
 # ============ Node / npm ============
 *.tsbuildinfo
@@ -70,24 +69,17 @@ coverage/
 *.tgz
 *.tar.gz
 
-# ============ Локальные данные пользователя ============
-# (на самом деле хранятся в userData вне проекта — оставлено для подстраховки)
-bookmarks.json
-history.json
-settings.json
-downloads.json
-session.json
-
-# ============ Временные файлы при сборке иконок ============
-build/icon.iconset/
-
 # ============ Vite / electron-vite кэш ============
 .vite/
 node_modules/.vite/
+.electron-vite/
 
 # ============ electron-builder временные файлы ============
 .electron-builder/
 *.blockmap
+
+# ============ Иконки при сборке ============
+build/icon.iconset/
 
 # ============ macOS системы сборки ============
 *.dSYM/

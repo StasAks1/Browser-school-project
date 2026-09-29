@@ -526,6 +526,21 @@ function renderPrivacy() {
     </div>
 
     <div class="setting-group">
+      <div class="setting-row">
+        <div class="setting-body">
+          <div class="setting-label">Расширения Chrome</div>
+          <div class="setting-desc">
+            Устанавливайте расширения из Chrome Web Store (Manifest V3).
+            Например, uBlock Origin Lite для блокировки рекламы.
+          </div>
+        </div>
+        <div class="setting-control">
+          <button id="open-extensions" class="btn-dl">Управление расширениями</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="setting-group">
       <div class="setting-row column">
         <div class="setting-label">Cookie-менеджер</div>
         <div class="setting-desc" style="margin-top: 8px;">
@@ -562,11 +577,16 @@ function renderPrivacy() {
           • Закладки, история, настройки, список загрузок — в локальной папке профиля приложения (userData)<br>
           • Сессия (список открытых вкладок) — в userData/session.json, только если включено восстановление<br>
           • Cookie, кэш, localStorage сайтов — во встроенной сессии Chromium<br>
+          • Расширения Chrome — в userData/Extensions, устанавливаются из Chrome Web Store<br>
           • Всё это находится исключительно на вашем компьютере и не передаётся разработчику или третьим лицам
         </div>
       </div>
     </div>
   `
+
+  document.getElementById('open-extensions').addEventListener('click', () => {
+    window.browserAPI.navigate('internal://extensions')
+  })
 
   document.getElementById('open-cookies').addEventListener('click', () => {
     window.browserAPI.openCookiesPage()
@@ -659,7 +679,7 @@ function renderPrivacy() {
 // ============ О браузере ============
 function renderAbout() {
   const info = appInfo || {
-    name: 'Browser Project',
+    name: 'Malina Browser',
     version: '—',
     electronVersion: '—',
     chromeVersion: '—',
@@ -718,6 +738,7 @@ function renderAbout() {
           <strong>electron-vite</strong> — MIT License<br>
           <strong>@mozilla/readability</strong> — Apache 2.0<br>
           <strong>pdfjs-dist</strong> — Apache 2.0<br>
+          <strong>electron-chrome-web-store</strong> — MIT License<br>
           <strong>DuckDuckGo Autocomplete API</strong> — публичный API<br>
           <strong>DuckDuckGo Favicon Service</strong> — публичный сервис
         </div>
@@ -730,8 +751,8 @@ function renderAbout() {
         <div class="setting-desc" style="margin-top: 8px; line-height: 1.6;">
           Учебный проект по информатике. Кроссплатформенный браузер на Electron + Vite
           с поддержкой вкладок, закладок, папок, истории, загрузок, cookie-менеджера,
-          восстановления сессии, приватного режима, режима чтения, PDF-viewer, блокировки трекеров
-          и кастомных разрешений. Все данные хранятся локально на устройстве пользователя.
+          восстановления сессии, приватного режима, режима чтения, PDF-viewer, блокировки трекеров,
+          кастомных разрешений и расширений Chrome. Все данные хранятся локально на устройстве пользователя.
         </div>
       </div>
     </div>
@@ -785,3 +806,5 @@ init().then(() => {
     renderSection(section)
   }
 })
+
+/* эта строка создана только для красивого коммита 10 обновления на гитхаб, чисто эстетика, не судите строго */

@@ -1,4 +1,6 @@
 import { app, BrowserWindow, WebContentsView, ipcMain, net, Menu, clipboard, screen, nativeTheme, dialog, shell } from 'electron'
+import { session as electronSession } from 'electron'
+import { installChromeWebStore, installExtension, updateExtensions } from 'electron-chrome-web-store'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -11,7 +13,7 @@ import { setupApplicationMenu } from './menu.js'
 import { showTabContextMenu } from './context-menu.js'
 import { getPrivateSession, clearPrivateData, PRIVATE_BG_COLOR } from './private.js'
 import { extractArticle } from './reader.js'
-import { attachTrackerBlocker, getStats as getTrackerStats, resetStats as resetTrackerStats } from './tracker-blocker.js'
+import { attachTrackerBlocker, getStats as getTrackerStats, resetStats as resetTrackerStats, getCategories as getTrackerCategories } from './tracker-blocker.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -38,6 +40,7 @@ const INTERNAL_DOWNLOADS = 'internal://downloads'
 const INTERNAL_COOKIES = 'internal://cookies'
 const INTERNAL_READER = 'internal://reader'
 const INTERNAL_PDF = 'internal://pdf'
+const INTERNAL_EXTENSIONS = 'internal://extensions'
 
 const POPUP_WIDTH = 300
 const POPUP_HEIGHT = 165
@@ -66,6 +69,9 @@ const ACCENT_COLORS = {
 const ACCENT_DEFAULT = 'orange'
 
 const ALL_TOOLBAR_BUTTONS = ['reader', 'find', 'downloads', 'history', 'reload', 'home']
+
+// ID категорий блокировки трекеров (порядок = порядок в UI)
+const TRACKER_CATEGORY_IDS = ['ads', 'analytics', 'social', 'marketing', 'fingerprint', 'cryptominers']
 
 // Белый список CSS-переменных для кастомной темы
 const THEME_VAR_WHITELIST = new Set([
@@ -96,6 +102,15 @@ let settingsCache = {
   askWhereToSave: false,
   restoreSession: true,
   blockTrackers: true,
+  blockAdUrls: true,
+  trackerCategories: {
+    analytics: true,
+    ads: true,
+    social: true,
+    fingerprint: true,
+    cryptominers: true,
+    marketing: true,
+  },
   toolbarButtons: [...ALL_TOOLBAR_BUTTONS],
   httpsOnly: false,
   homepage: 'startpage',
@@ -379,7 +394,11 @@ function setupSecurity() {
   })
 
   // Блокировка трекеров и рекламы (обычная сессия)
-  attachTrackerBlocker(ses, () => !!settingsCache.blockTrackers, handleTrackerBlocked)
+  attachTrackerBlocker(ses, {
+    isEnabled: () => !!settingsCache.blockTrackers,
+    isCategoryEnabled: (catId) => isTrackerCategoryEnabled(catId),
+    isAdUrlBlockEnabled: () => !!settingsCache.blockAdUrls,
+  }, handleTrackerBlocked)
 }
 
 function attachTabSecurityHandlers(tab) {
@@ -498,6 +517,7 @@ function isTrustedInternalUrl(url) {
     url.includes('cookies/cookies.html') ||
     url.includes('reader/reader.html') ||
     url.includes('pdf/pdf.html') ||
+    url.includes('extensions/extensions.html') ||
     url.includes('statusbar/statusbar.html') ||
     url.includes('error/error.html') ||
     url.includes('warning/warning.html') ||
@@ -545,6 +565,10 @@ function getReaderPageUrl() {
 function getPdfPagePath() { return path.join(__dirname, '../renderer/pdf/pdf.html') }
 function getPdfPageUrl() {
   return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/pdf/pdf.html` : null
+}
+function getExtensionsPagePath() { return path.join(__dirname, '../renderer/extensions/extensions.html') }
+function getExtensionsPageUrl() {
+  return process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/extensions/extensions.html` : null
 }
 function getStatusBarPath() { return path.join(__dirname, '../renderer/statusbar/statusbar.html') }
 function getStatusBarUrl() {
@@ -598,6 +622,20 @@ function isValidColor(value) {
   return COLOR_VALUE_RE.test(v)
 }
 
+function normalizeTrackerCategories(value) {
+  const out = {}
+  for (const id of TRACKER_CATEGORY_IDS) {
+    out[id] = (value && typeof value === 'object' && value[id] === false) ? false : true
+  }
+  return out
+}
+
+function isTrackerCategoryEnabled(catId) {
+  if (!catId) return true
+  return settingsCache.trackerCategories?.[catId] !== false
+}
+
+
 function normalizeCustomTheme(value) {
   if (!value || typeof value !== 'object') return null
   const name = typeof value.name === 'string' ? value.name.trim().slice(0, 50) : 'Моя тема'
@@ -627,6 +665,8 @@ function loadSettings() {
         askWhereToSave: !!data.askWhereToSave,
         restoreSession: data.restoreSession !== false,
         blockTrackers: data.blockTrackers !== false,
+        blockAdUrls: data.blockAdUrls !== false,
+        trackerCategories: normalizeTrackerCategories(data.trackerCategories),
         toolbarButtons: normalizeToolbarButtons(data.toolbarButtons),
         httpsOnly: !!data.httpsOnly,
         homepage: normalizeHomepage(data.homepage),
@@ -640,6 +680,15 @@ function loadSettings() {
         askWhereToSave: false,
         restoreSession: true,
         blockTrackers: true,
+        blockAdUrls: true,
+        trackerCategories: {
+          analytics: true,
+          ads: true,
+          social: true,
+          fingerprint: true,
+          cryptominers: true,
+          marketing: true,
+        },
         toolbarButtons: [...ALL_TOOLBAR_BUTTONS],
         httpsOnly: false,
         homepage: 'startpage',
@@ -656,6 +705,15 @@ function loadSettings() {
       askWhereToSave: false,
       restoreSession: true,
       blockTrackers: true,
+      blockAdUrls: true,
+      trackerCategories: {
+        analytics: true,
+        ads: true,
+        social: true,
+        fingerprint: true,
+        cryptominers: true,
+        marketing: true,
+      },
       toolbarButtons: [...ALL_TOOLBAR_BUTTONS],
       httpsOnly: false,
       homepage: 'startpage',
@@ -1051,12 +1109,14 @@ function isDownloadsPageUrl(url) { if (!url) return false; return url.includes('
 function isCookiesPageUrl(url) { if (!url) return false; return url.includes('cookies/cookies.html') }
 function isReaderPageUrl(url) { if (!url) return false; return url.includes('reader/reader.html') }
 function isPdfPageUrl(url) { if (!url) return false; return url.includes('pdf/pdf.html') }
+function isExtensionsPageUrl(url) { if (!url) return false; return url.includes('extensions/extensions.html') }
 function isErrorPageUrl(url) { if (!url) return false; return url.includes('error/error.html') }
 function isWarningPageUrl(url) { if (!url) return false; return url.includes('warning/warning.html') }
 function isInternalUrl(url) {
   return isStartpageUrl(url) || isBookmarksPageUrl(url) || isHistoryPageUrl(url) ||
          isSettingsPageUrl(url) || isDownloadsPageUrl(url) || isCookiesPageUrl(url) ||
-         isReaderPageUrl(url) || isPdfPageUrl(url) || isErrorPageUrl(url) || isWarningPageUrl(url)
+         isReaderPageUrl(url) || isPdfPageUrl(url) || isExtensionsPageUrl(url) ||
+         isErrorPageUrl(url) || isWarningPageUrl(url)
 }
 
 function serializeTabs() {
@@ -1379,7 +1439,6 @@ function updateStatusBar(url) {
 function hideStatusBar() {
   updateStatusBar('')
 }
-
 // ============================================================
 // ============ LAYOUT ========================================
 // ============================================================
@@ -1450,6 +1509,7 @@ function isUrlLike(input) {
     input === INTERNAL_DOWNLOADS ||
     input === INTERNAL_COOKIES ||
     input === INTERNAL_PDF ||
+    input === INTERNAL_EXTENSIONS ||
     input.startsWith(INTERNAL_SETTINGS + '?')
   ) return true
   if (/\s/.test(input)) return false
@@ -1468,6 +1528,7 @@ function normalizeToUrl(input) {
     trimmed === INTERNAL_DOWNLOADS ||
     trimmed === INTERNAL_COOKIES ||
     trimmed === INTERNAL_PDF ||
+    trimmed === INTERNAL_EXTENSIONS ||
     trimmed.startsWith(INTERNAL_SETTINGS + '?')
   ) return trimmed
   if (isUrlLike(trimmed)) {
@@ -1738,7 +1799,11 @@ function recreateTab(tab) {
   }
   if (tab.isPrivate) {
     const privateSession = getPrivateSession()
-    attachTrackerBlocker(privateSession, () => !!settingsCache.blockTrackers, handleTrackerBlocked)
+    attachTrackerBlocker(privateSession, {
+      isEnabled: () => !!settingsCache.blockTrackers,
+      isCategoryEnabled: (catId) => isTrackerCategoryEnabled(catId),
+      isAdUrlBlockEnabled: () => !!settingsCache.blockAdUrls,
+    }, handleTrackerBlocked)
     attachDownloadHandlerToSession(privateSession)
     viewPrefs.session = privateSession
   }
@@ -1806,7 +1871,11 @@ function createTab(url, options = {}) {
   }
   if (isPrivate) {
     const privateSession = getPrivateSession()
-    attachTrackerBlocker(privateSession, () => !!settingsCache.blockTrackers, handleTrackerBlocked)
+    attachTrackerBlocker(privateSession, {
+      isEnabled: () => !!settingsCache.blockTrackers,
+      isCategoryEnabled: (catId) => isTrackerCategoryEnabled(catId),
+      isAdUrlBlockEnabled: () => !!settingsCache.blockAdUrls,
+    }, handleTrackerBlocked)
     attachDownloadHandlerToSession(privateSession)
     viewPrefs.session = privateSession
   }
@@ -1911,6 +1980,11 @@ function loadTabContent(tab, url) {
   if (url === INTERNAL_PDF || (url && url.startsWith(INTERNAL_PDF + '?'))) {
     const u = getPdfPageUrl()
     if (u) wc.loadURL(u); else wc.loadFile(getPdfPagePath())
+    return
+  }
+  if (url === INTERNAL_EXTENSIONS) {
+    const u = getExtensionsPageUrl()
+    if (u) wc.loadURL(u); else wc.loadFile(getExtensionsPagePath())
     return
   }
   if (url && url !== 'about:blank') {
@@ -2054,7 +2128,7 @@ function getRecentlyClosed() {
 function refreshMenu() {
   if (!currentMenuActions) return
   try {
-    setupApplicationMenu(currentMenuActions, currentMenuOptions || { appName: 'Browser Project' })
+    setupApplicationMenu(currentMenuActions, currentMenuOptions || { appName: 'Malina Browser' })
   } catch (err) {
     debugLog('Menu', `Ошибка пересборки меню: ${err.message}`)
   }
@@ -2136,6 +2210,11 @@ function navigateInActiveTab(input) {
   if (url === INTERNAL_PDF || (url && url.startsWith(INTERNAL_PDF + '?'))) {
     const u = getPdfPageUrl()
     if (u) tab.view.webContents.loadURL(u); else tab.view.webContents.loadFile(getPdfPagePath())
+    return
+  }
+  if (url === INTERNAL_EXTENSIONS) {
+    const u = getExtensionsPageUrl()
+    if (u) tab.view.webContents.loadURL(u); else tab.view.webContents.loadFile(getExtensionsPagePath())
     return
   }
 
@@ -2271,9 +2350,22 @@ function openBookmarkPopup({ rect, bookmarkId, title, url }) {
 // ============================================================
 // ============ ОКНО ==========================================
 // ============================================================
-function createWindow() {
+async function createWindow() {
   const isMac = process.platform === 'darwin'
   const isWin = process.platform === 'win32'
+
+  // ============ Chrome Web Store ============
+  // Установщик расширений (MIT-лицензия)
+  try {
+    const extensionsPath = path.join(app.getPath('userData'), 'Extensions')
+    await installChromeWebStore({
+      session: electronSession.defaultSession,
+      extensionsPath,
+    })
+    debugLog('Extensions', 'Chrome Web Store инициализирован')
+  } catch (err) {
+    debugLog('Extensions', `Ошибка инициализации: ${err.message}`)
+  }
 
   const themeColor = getBackgroundColor()
   const symbolColor = getResolvedTheme() === 'light' ? '#1a1a1a' : '#f0f0f0'
@@ -2809,7 +2901,7 @@ app.whenReady().then(() => {
   }
 
   currentMenuActions = menuActions
-  currentMenuOptions = { appName: 'Browser Project' }
+  currentMenuOptions = { appName: 'Malina Browser' }
   setupApplicationMenu(menuActions, currentMenuOptions)
 
   loadSettings()
@@ -3120,7 +3212,7 @@ app.whenReady().then(() => {
     return getAccentData()
   })
   ipcMain.handle('get-app-info', () => ({
-    name: 'Browser Project',
+    name: 'Malina Browser',
     version: app.getVersion(),
     electronVersion: process.versions.electron,
     chromeVersion: process.versions.chrome,
@@ -3145,11 +3237,32 @@ app.whenReady().then(() => {
     return { ok: true }
   })
 
-  // ============ Трекеры и реклама ============
   ipcMain.handle('get-tracker-setting', () => ({
     enabled: !!settingsCache.blockTrackers,
     stats: getTrackerStats(),
+    categories: getTrackerCategories(isTrackerCategoryEnabled),
   }))
+
+  ipcMain.handle('get-tracker-categories', () => (
+    getTrackerCategories(isTrackerCategoryEnabled)
+  ))
+
+  ipcMain.handle('set-tracker-category', (_e, payload) => {
+    const { id, enabled } = payload || {}
+    if (!id || !TRACKER_CATEGORY_IDS.includes(id)) {
+      return { ok: false, error: 'Неизвестная категория' }
+    }
+    settingsCache.trackerCategories = {
+      ...settingsCache.trackerCategories,
+      [id]: !!enabled,
+    }
+    saveSettings()
+    debugLog('Tracker', `Категория ${id}: ${enabled ? 'вкл' : 'выкл'}`)
+    return {
+      ok: true,
+      categories: getTrackerCategories(isTrackerCategoryEnabled),
+    }
+  })
   ipcMain.handle('set-tracker-setting', (_e, value) => {
     settingsCache.blockTrackers = !!value
     saveSettings()
@@ -3159,12 +3272,22 @@ app.whenReady().then(() => {
     return {
       enabled: !!settingsCache.blockTrackers,
       stats: getTrackerStats(),
+      categories: getTrackerCategories(isTrackerCategoryEnabled),
     }
   })
   ipcMain.handle('get-tracker-stats', () => getTrackerStats())
   ipcMain.handle('reset-tracker-stats', () => {
     resetTrackerStats()
     return getTrackerStats()
+  })
+
+  // ============ Блокировка рекламы по URL-паттернам ============
+  ipcMain.handle('get-ad-url-block', () => !!settingsCache.blockAdUrls)
+  ipcMain.handle('set-ad-url-block', (_e, value) => {
+    settingsCache.blockAdUrls = !!value
+    saveSettings()
+    debugLog('Tracker', `URL-блокировка рекламы: ${settingsCache.blockAdUrls ? 'вкл' : 'выкл'}`)
+    return !!settingsCache.blockAdUrls
   })
 
   // ============ HTTPS-only ============
@@ -3983,7 +4106,64 @@ app.whenReady().then(() => {
 
     return results
   })
+
   ipcMain.handle('get-suggestions', (_e, query) => fetchSuggestions(query))
+
+  // ============ Расширения Chrome ============
+  ipcMain.handle('extensions-list', () => {
+    try {
+      const list = electronSession.defaultSession.getAllExtensions()
+      return list.map(ext => ({
+        id: ext.id,
+        name: ext.name,
+        version: ext.version,
+        description: ext.manifest?.description || '',
+        path: ext.path,
+      }))
+    } catch (err) {
+      debugLog('Extensions', `Ошибка получения списка: ${err.message}`)
+      return []
+    }
+  })
+
+  ipcMain.handle('extensions-install', async (_e, extensionId) => {
+    if (!extensionId || typeof extensionId !== 'string') {
+      return { ok: false, error: 'Некорректный ID расширения' }
+    }
+    try {
+      const existing = electronSession.defaultSession.getAllExtensions().find(e => e.id === extensionId)
+      if (existing) {
+        return { ok: false, error: 'Расширение уже установлено' }
+      }
+      await installExtension(extensionId, { session: electronSession.defaultSession })
+      debugLog('Extensions', `Установлено: ${extensionId}`)
+      return { ok: true }
+    } catch (err) {
+      debugLog('Extensions', `Ошибка установки: ${err.message}`)
+      return { ok: false, error: err.message || 'Не удалось установить расширение' }
+    }
+  })
+
+  ipcMain.handle('extensions-remove', async (_e, extensionId) => {
+    if (!extensionId) return { ok: false, error: 'Не указан ID' }
+    try {
+      await electronSession.defaultSession.removeExtension(extensionId)
+      debugLog('Extensions', `Удалено: ${extensionId}`)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('extensions-update', async () => {
+    try {
+      await updateExtensions({ session: electronSession.defaultSession })
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+  })
+
 })
 
 // ============================================================
@@ -4013,3 +4193,5 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
+
+/* эта строка создана только для красивого коммита 10 обновления на гитхаб, чисто эстетика, не судите строго */

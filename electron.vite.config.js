@@ -30,9 +30,12 @@ export default defineConfig({
           warning: resolve(__dirname, 'src/renderer/warning/warning.html'),
           popup: resolve(__dirname, 'src/renderer/popup/popup.html'),
           permission: resolve(__dirname, 'src/renderer/permission/permission.html'),
-          pdf: resolve(__dirname, 'src/renderer/pdf/pdf.html')
+          pdf: resolve(__dirname, 'src/renderer/pdf/pdf.html'),
+          extensions: resolve(__dirname, 'src/renderer/extensions/extensions.html')
         }
       }
     }
   }
 })
+
+/* эта строка создана только для красивого коммита 10 обновления на гитхаб, чисто эстетика, не судите строго */
